@@ -309,3 +309,28 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +			unslept = sleep(unslept);
 +	}
 +}
+Index: src/etc/rc
+===================================================================
+--- src.orig/etc/rc
++++ src/etc/rc
+@@ -583,7 +583,7 @@ start_daemon ldomd sshd switchd snmpd ld
+ start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
+ start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
+ start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
+-start_daemon rbootd mopd vmd spamd spamlogd sndiod
++start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
+ echo '.'
+ 
+ # If rc.firsttime exists, run it just once, and make sure it is deleted.
+Index: src/etc/rc.conf
+===================================================================
+--- src.orig/etc/rc.conf
++++ src/etc/rc.conf
+@@ -27,6 +27,7 @@ ftpproxy6_flags=NO
+ hostapd_flags=NO
+ hotplugd_flags=NO
+ httpd_flags=NO
++iclcd_flags=NO
+ identd_flags=NO
+ ifstated_flags=NO
+ iked_flags=NO
