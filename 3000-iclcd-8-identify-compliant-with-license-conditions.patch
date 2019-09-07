@@ -31,7 +31,7 @@ Index: src/usr.sbin/iclcd/iclcd.8
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.8
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,60 @@
 +.Dd September 7 2019
 +.Dt ICLCD 8
 +.Os
@@ -40,7 +40,9 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +.Nd identification compliant with license conditions daemon
 +.Sh SYNOPSIS
 +.Nm
++.Op Fl D
 +.Op Fl i Ar interface
++.Op Fl p Ar period
 +.Sh DESCRIPTION
 +.Nm
 +sends raw Ethernet frames on the specified interface using Ethertype 0x4400
@@ -63,8 +65,12 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +and enabling daemons.
 +.Sh OPTIONS
 +.Bl -tag -width Ds
++.It Fl D
++Do not daemonize.
 +.It Fl i Ar interface
 +Interface name to broadcast ident frames (default: kiss0).
++.It Fl p Ar period
++Period in seconds between broadcasts (default: 60).
 +.Sh PROTOCOL DETAILS
 +The first byte of the Ethernet payload contains the version number of the iclcd
 +protocol, which currently is zero. The remainder of the packet contains the
@@ -90,19 +96,11 @@ Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.c
-@@ -0,0 +1,160 @@
+@@ -0,0 +1,212 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
 + *
 + * Written by Iain R. Learmonth <irl@fsfe.org> for the public domain.
-+ */
-+
-+/*
-+ * TODO:
-+ *
-+ * - check for root euid
-+ * - actually fork off and be a daemon
-+ * - allow sleep duration to be customisable
 + */
 +
 +#include <stdio.h>
@@ -112,6 +110,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +#include <stdlib.h>
 +#include <syslog.h>
 +#include <stdarg.h>
++#include <signal.h>
 +
 +#include <sys/times.h>
 +#include <sys/time.h>
@@ -135,9 +134,24 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +{
 +	extern char *__progname;
 +
-+	fprintf(stderr, "usage: %s [-i interface]\n",
++	fprintf(stderr, "usage: %s [-D] [-i interface] [-p period]\n",
 +	    __progname);
 +	exit(1);
++}
++
++void
++signal_handler(int sig)
++{
++	switch(sig) {
++	case SIGHUP:
++		syslog(LOG_DAEMON | LOG_INFO, "caught hangup signal");
++		break;
++	case SIGTERM:
++		syslog(LOG_DAEMON | LOG_EMERG,
++		    "caught terminate signal, shutting down");
++		exit(0);
++		break;
++	}
 +}
 +
 +char *
@@ -193,7 +207,6 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	{
 +		sprintf(buf, "/dev/bpf%i", i);
 +		bpf = open(buf, O_RDWR);
-+
 +		if (bpf != -1)
 +			break;
 +	}
@@ -209,18 +222,54 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	return bpf;
 +}
 +
++void
++daemonize()
++{
++	int i;
++	// TODO: should this use daemon(3) instead? maybe it cuts this down
++	if (getppid() == 1)
++		return; /* already a daemon */
++	i = fork();
++	if (i<0)
++		exit(1); /* fork error */
++	if (i>0)
++		exit(0); /* parent exits */
++	/* child (daemon) continues */
++	setsid(); /* obtain a new process group */
++	for (i = getdtablesize(); i >= 0; --i)
++		close(i); /* close all descriptors */
++	i = open("/dev/null", O_RDWR);
++	dup(i);
++	dup(i); /* handle standard I/O */
++	signal(SIGCHLD, SIG_IGN); /* ignore child */
++	signal(SIGTSTP, SIG_IGN); /* ignore tty signals */
++	signal(SIGTTOU, SIG_IGN);
++	signal(SIGTTIN, SIG_IGN);
++	signal(SIGHUP, signal_handler); /* catch hangup signal */
++	signal(SIGTERM, signal_handler); /* catch kill signal */
++}
++
 +int
 +main(int argc, char **argv)
 +{
-+	int bpf;
++	int bpf, daemon, period;
 +	char ch, *interface;
 +
++	/* option defaults */
++	daemon = 1;
++	period = 60;
 +	interface = "kiss0"; // default
 +
-+	while ((ch = getopt(argc, argv, "i:")) != -1) {
++	while ((ch = getopt(argc, argv, "i:p:D")) != -1) {
 +		switch (ch) {
 +		case 'i':
 +			interface = optarg;
++			break;
++		case 'p':
++			period = atoi(optarg);
++			break;
++		case 'D':
++			daemon = 0;
 +			break;
 +		default:
 +			usage();
@@ -229,6 +278,13 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	}
 +	argc -= optind;
 +	argv += optind;
++
++	/* Check for root privileges. */
++	if (geteuid())
++		fatal("need root privileges");
++
++	if (daemon)
++		daemonize();
 +
 +	if ((bpf = openbpf(interface)) == -1)
 +		fatal("failed to open bpf interface");
@@ -248,6 +304,8 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +			syslog(LOG_DAEMON | LOG_ERR,
 +			    "failure reason: %m");
 +		}
-+		while ((unslept = sleep(60)) != 0);
++		unslept = period;
++		while (unslept > 0)
++			unslept = sleep(unslept);
 +	}
 +}
