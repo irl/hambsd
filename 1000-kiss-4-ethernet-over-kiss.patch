@@ -666,27 +666,38 @@ Index: src/sys/net/kiss_tty.c
 +{
 +	struct kiss_softc *np = (struct kiss_softc *)tp->t_sc;
 +
++	if (c == KISSFEND) {
++		/* TODO: flush current frame into something */
++		printf("got start of new frame, previous frame was %d bytes\n",
++			np->pos);
++		np->newfrm = 1;
++		np->data = 0;
++		np->fesc = 0;
++		return 0;
++	}
++
 +	if (np->newfrm) {
++		/* this is the first byte in a new frame. */
 +		int port = (c & 0xF0) >> 4;
 +		int command = c & 0x0F;
 +
 +		np->newfrm = np->pos = 0;
 +
 +		switch (command) {
-+		case KISSFEND:
-+			break;
 +		case KISSCMD_DATA:
 +			printf("data command received on port %d\n", port);
 +			np->port = port;
 +			np->data = 1;
-+			return 0;
++			break;
 +		default:
 +			printf("unrecognised command received on port %d\n", port);
-+			return 0;
++			break;
 +		}
++		return 0;
 +	}
 +
 +	if (np->fesc) {
++		/* the last byte was a FESC. */
 +		int escaped = 0;
 +
 +		switch (c) {
@@ -707,26 +718,15 @@ Index: src/sys/net/kiss_tty.c
 +		return 0;
 +	}
 +
-+	switch (c) {
-+	case KISSFEND:
-+		/* TODO: flush current frame into something */
-+		printf("got start of new frame, previous frame was %d bytes\n",
-+			np->pos);
-+		np->newfrm = 1;
-+		np->data = 0;
-+		np->fesc = 0;
-+		break;
-+	case KISSFESC:
++	if (c == KISSFESC) {
 +		np->fesc = 1;
-+		break;
-+	default:
-+                printf(" input %d ", c);
-+		if (np->data && np->pos < (KISSMAX - 1))
-+			np->cbuf[np->pos++] = c;
-+		/* TODO: record error, frame too long */
-+		break;
++		return 0;
 +	}
 +
++	printf(" in %d ", c);
++	if (np->data && np->pos < (KISSMAX - 1))
++		np->cbuf[np->pos++] = c;
++	/* TODO: record error, frame too long */
 +	return 0;
 +}
 +
