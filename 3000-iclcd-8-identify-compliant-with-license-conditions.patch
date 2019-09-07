@@ -1,0 +1,253 @@
+Summary: iclcd(8): identify compliant with license conditions
+---
+Index: src/etc/rc.d/iclcd
+===================================================================
+--- /dev/null
++++ src/etc/rc.d/iclcd
+@@ -0,0 +1,11 @@
++#!/bin/ksh
++#
++# $OpenBSD$
++
++daemon="/usr/sbin/iclcd"
++
++. /etc/rc.d/rc.subr
++
++rc_reload=NO
++
++rc_cmd $1
+Index: src/usr.sbin/iclcd/Makefile
+===================================================================
+--- /dev/null
++++ src/usr.sbin/iclcd/Makefile
+@@ -0,0 +1,6 @@
++#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
++
++PROG=	iclcd
++MAN=	iclcd.8
++
++.include <bsd.prog.mk>
+Index: src/usr.sbin/iclcd/iclcd.8
+===================================================================
+--- /dev/null
++++ src/usr.sbin/iclcd/iclcd.8
+@@ -0,0 +1,54 @@
++.Dd September 7 2019
++.Dt ICLCD 8
++.Os
++.Sh NAME
++.Nm iclcd
++.Nd identification compliant with license conditions daemon
++.Sh SYNOPSIS
++.Nm
++.Op Fl i Ar interface
++.Sh DESCRIPTION
++.Nm
++sends raw Ethernet frames on the specified interface using Ethertype 0x4400
++containing the contents of
++.Pa /etc/mycallsign
++up to either the first newline or to the end of the file.
++.Pp
++.Nm
++is usually started at boot time, and can be enabled by
++setting the following in
++.Pa /etc/rc.conf.local :
++.Pp
++.Dl iclcd_flags=\&"\&"
++.Pp
++See
++.Xr rc 8
++and
++.Xr rc.conf 8
++for more information on the boot process
++and enabling daemons.
++.Sh OPTIONS
++.Bl -tag -width Ds
++.It Fl i Ar interface
++Interface name to broadcast ident frames (default: kiss0).
++.Sh PROTOCOL DETAILS
++The first byte of the Ethernet payload contains the version number of the iclcd
++protocol, which currently is zero. The remainder of the packet contains the
++callsign of the transmitting station encoded as
++.Xr ascii 7
++text.
++.Sh DISCLAIMER
++This may not be enough to comply with your local laws regarding identification
++of amateur radio transmissions. This manual page is not legal advice.
++.Sh CAVEATS
++It is not currently possible to broadcast identification on multiple interfaces
++with a single instance. It is however possible to manually start multiple
++instances.
++.Sh SEE ALSO
++.Xr mycallsign 5 ,
++.Xr kiss 4
++.Sh AUTHORS
++The
++.Nm
++daemon was written for the HamBSD project by Iain R. Learmonth for the public
++domain.
+Index: src/usr.sbin/iclcd/iclcd.c
+===================================================================
+--- /dev/null
++++ src/usr.sbin/iclcd/iclcd.c
+@@ -0,0 +1,160 @@
++/*
++ * iclcd - intentification compliant with license conditions daemon
++ *
++ * Written by Iain R. Learmonth <irl@fsfe.org> for the public domain.
++ */
++
++/*
++ * TODO:
++ *
++ * - check for root euid
++ * - actually fork off and be a daemon
++ * - allow sleep duration to be customisable
++ */
++
++#include <stdio.h>
++#include <string.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <syslog.h>
++#include <stdarg.h>
++
++#include <sys/times.h>
++#include <sys/time.h>
++#include <sys/ioctl.h>
++#include <net/bpf.h>
++#include <sys/socket.h>
++#include <net/if.h>
++
++__dead void
++fatal(char* msg)
++{
++	syslog(LOG_DAEMON | LOG_EMERG,
++	    "iclcd hit fatal error; you might want to turn off your radio");
++	syslog(LOG_DAEMON | LOG_ERR,
++	    "%s", msg);
++	exit(1);
++}
++
++__dead void
++usage(void)
++{
++	extern char *__progname;
++
++	fprintf(stderr, "usage: %s [-i interface]\n",
++	    __progname);
++	exit(1);
++}
++
++char *
++mycallsign()
++{
++	FILE    *mcp;
++	char    *call, *nl;
++	size_t  callsize = 0;
++	ssize_t calllen;
++
++	call = NULL;
++
++	if ((mcp = fopen("/etc/mycallsign", "r")) == NULL)
++		fatal("could not open /etc/mycallsign");
++	if ((calllen = getline(&call, &callsize, mcp)) != -1) {
++		if ((nl = strchr(call, '\n')) != NULL)
++			nl[0] = '\0';
++		return call;
++	}
++	fatal("could not read callsign from /etc/mycallsign");
++}
++
++int
++composeframe(char *buf, char *call)
++{
++	int framelen, calllen;
++
++	const char header[] = {
++	  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // broadcast destination
++	  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // source filled by bpf
++	  0x44, 0x00,                         // ethertype
++	  0x00                                // version
++	};
++
++	memcpy(buf, header, 15);
++	framelen = 15; // prefix is 15 bytes
++	calllen = strlcpy(&buf[14], call, 25);
++	if (calllen > 25) {
++		fatal("callsign in /etc/mycallsign too long");
++	}
++	framelen = framelen + calllen - 1; // remove the NUL from end of call
++	return framelen;
++}
++
++int
++openbpf(char *interface)
++{
++	char buf[11];
++	int bpf, iflen;
++	struct ifreq bound_if;
++
++	for (int i = 0; i < 99; i++)
++	{
++		sprintf(buf, "/dev/bpf%i", i);
++		bpf = open(buf, O_RDWR);
++
++		if (bpf != -1)
++			break;
++	}
++
++	iflen = strlen(interface);
++	if (strlcpy(bound_if.ifr_name, interface, sizeof(bound_if.ifr_name))
++	    < iflen)
++		fatal("interface name too long");
++
++	if(ioctl(bpf, BIOCSETIF, &bound_if) > 0)
++		return -1;
++
++	return bpf;
++}
++
++int
++main(int argc, char **argv)
++{
++	int bpf;
++	char ch, *interface;
++
++	interface = "kiss0"; // default
++
++	while ((ch = getopt(argc, argv, "i:")) != -1) {
++		switch (ch) {
++		case 'i':
++			interface = optarg;
++			break;
++		default:
++			usage();
++			break;
++		}
++	}
++	argc -= optind;
++	argv += optind;
++
++	if ((bpf = openbpf(interface)) == -1)
++		fatal("failed to open bpf interface");
++
++	char framebuf[40];
++	char *call = mycallsign();
++	int framelen = composeframe(framebuf, call);
++	int unslept;
++
++	syslog(LOG_DAEMON | LOG_INFO,
++	    "started up (interface %s, callsign: %s)", interface, call);
++
++	for (;;) {
++		if (write(bpf, &framebuf, framelen) != framelen) {
++			syslog(LOG_DAEMON | LOG_EMERG,
++			    "failed to send ident frame, might want to unplug");
++			syslog(LOG_DAEMON | LOG_ERR,
++			    "failure reason: %m");
++		}
++		while ((unslept = sleep(60)) != 0);
++	}
++}

@@ -1,0 +1,50 @@
+Summary: mycallsign(5): Add man page
+---
+Index: src/share/man/man5/mycallsign.5
+===================================================================
+--- /dev/null
++++ src/share/man/man5/mycallsign.5
+@@ -0,0 +1,43 @@
++.\"	$OpenBSD$
++.\"
++.\" Copyright (c) 2003 Jason McIntyre <jmc@openbsd.org>
++.\" Copyright (c) 2019 Iain R. Learmonth <irl@fsfe.org>
++.\"
++.\" Permission to use, copy, modify, and distribute this software for any
++.\" purpose with or without fee is hereby granted, provided that the above
++.\" copyright notice and this permission notice appear in all copies.
++.\"
++.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++.\"
++.Dd $Mdocdate: September 9 2019 $
++.Dt MYCALLSIGN 5
++.Os
++.Sh NAME
++.Nm mycallsign
++.Nd default amateur radio callsign
++.Sh DESCRIPTION
++The
++.Nm mycallsign
++file is read by
++.Xr iclcd 8
++when started.
++.Pp
++.Pa /etc/mycallsign
++contains the callsign to be used for identification purposes according to the
++conditions of your amateur radio license.
++The file should contain a single line specifying the
++prefix, callsign including any required regional locator, and suffix.
++.Sh FILES
++.Bl -tag -width "/etc/mycallsign" -compact
++.It Pa /etc/mycallsign
++Default amateur radio callsign
++.El
++.Sh SEE ALSO
++.Xr iclcd 8 ,
++.Xr kiss 4
