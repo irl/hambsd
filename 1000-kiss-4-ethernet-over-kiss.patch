@@ -743,7 +743,7 @@ Index: src/sys/net/kiss_tty.c
 +	putc(KISSCMD_DATA, &tp->t_outq); /* implicitly port 0 */
 +	for (;;) {
 +		kissoutputdata(tp, m);
-+		if ((m = m->m_next) == NULL)
++		if ((m = m_free(m)) == NULL)
 +			break;
 +	}
 +	putc(KISSFEND, &tp->t_outq);
