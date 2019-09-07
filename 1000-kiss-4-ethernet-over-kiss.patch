@@ -200,7 +200,7 @@ Index: src/sys/net/if_kiss.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/if_kiss.c
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,288 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -405,8 +405,7 @@ Index: src/sys/net/if_kiss.c
 +	smr_read_enter();
 +	struct mbuf *m;
 +	while ((m = ifq_dequeue(ifq)) != NULL)
-+		printf("kiss_start (dequeue)\n");
-+	kissoutput(tp, m);
++		kissoutput(tp, m);
 +	smr_read_leave();
 +}
 +
@@ -557,7 +556,7 @@ Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,252 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -737,8 +736,6 @@ Index: src/sys/net/kiss_tty.c
 +
 +	smr_read_enter(); // TODO: what is this protecting?
 +	s = spltty();
-+	printf("kiss_enqueue packet with %d bytes\n", m->m_pkthdr.len);
-+	// transmit function to be broken out
 +	putc(KISSFEND, &tp->t_outq);
 +	putc(KISSCMD_DATA, &tp->t_outq); /* implicitly port 0 */
 +	for (;;) {
