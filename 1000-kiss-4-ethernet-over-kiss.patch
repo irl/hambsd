@@ -493,7 +493,7 @@ Index: src/sys/net/if_kiss.h
 ===================================================================
 --- /dev/null
 +++ src/sys/net/if_kiss.h
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,60 @@
 +
 +/* Structures and declarations for KISS. */
 +
@@ -526,6 +526,10 @@ Index: src/sys/net/if_kiss.h
 +#define KISSCMD_SETHARDWARE	0x06 /* this is not implemented anywhere here */
 +#define KISSCMD_RETURN		0xFF /* on all ports */
 +
++#define KISSSC_NEW	1
++#define KISSSC_DATA	2
++#define KISSSC_ESCAPE	4
++
 +struct kiss_softc {
 +	/* network interface */
 +	struct arpcom		sc_ac;
@@ -536,12 +540,10 @@ Index: src/sys/net/if_kiss.h
 +
 +	/* line discipline */
 +	void			*sc_devp; /* tty */
++	int			port; /* port index of current recvd data */
 +	char			cbuf[KISSMAX];	/* receive buffer */
 +	int			pos; /* position in rcv buffer */
-+	int			newfrm; /* new frame started; no command yet */
-+	int			data; /* data command was recieved */
-+	int			port; /* port index of current recvd data */
-+	int			fesc; /* fesc was recvd, next byte transposed */
++	unsigned int		sc_flags; /* see KISSSC_* */
 +
 +	pid_t	sc_xfer; /* used in transferring unit */
 +	LIST_ENTRY(kiss_softc) sc_list; /* all kiss interfaces */
@@ -556,7 +558,7 @@ Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,252 @@
+@@ -0,0 +1,263 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -580,8 +582,7 @@ Index: src/sys/net/kiss_tty.c
 + *  TODO:
 + *
 + *  - Set the interface as running in kissopen (and not in kissclose)
-+ *  - Packing incoming frames into mbufs and pass to interface specific handler
-+ *  - Fix double FEND errors that seem to be occuring
++ *  - Count the number of input errors occuring
 + */
 +
 +/* A tty line discipline to communicate with a KISS terminal node controller. */
@@ -609,6 +610,7 @@ Index: src/sys/net/kiss_tty.c
 +
 +static void kissreturn(struct tty *tp);
 +static void kissoutputdata(struct tty *tp, struct mbuf *m);
++static void kissinputdone(struct kiss_softc *sc);
 +
 +/* take over a tty and match with a kiss net interface. */
 +int
@@ -663,30 +665,28 @@ Index: src/sys/net/kiss_tty.c
 +int
 +kissinput(int c, struct tty *tp)
 +{
-+	struct kiss_softc *np = (struct kiss_softc *)tp->t_sc;
++	struct kiss_softc *sc = (struct kiss_softc *)tp->t_sc;
 +
 +	if (c == KISSFEND) {
-+		/* TODO: flush current frame into something */
-+		printf("got start of new frame, previous frame was %d bytes\n",
-+			np->pos);
-+		np->newfrm = 1;
-+		np->data = 0;
-+		np->fesc = 0;
++		if (sc->sc_flags & KISSSC_DATA && sc->pos > 14)
++			kissinputdone(sc);
++		sc->sc_flags = KISSSC_NEW;
 +		return 0;
 +	}
 +
-+	if (np->newfrm) {
++	if (sc->sc_flags & KISSSC_NEW) {
 +		/* this is the first byte in a new frame. */
 +		int port = (c & 0xF0) >> 4;
 +		int command = c & 0x0F;
 +
-+		np->newfrm = np->pos = 0;
++		sc->sc_flags = 0;
 +
 +		switch (command) {
 +		case KISSCMD_DATA:
 +			printf("data command received on port %d\n", port);
-+			np->port = port;
-+			np->data = 1;
++			sc->port = port;
++			sc->pos = 0;
++			sc->sc_flags |= KISSSC_DATA;
 +			break;
 +		default:
 +			printf("unrecognised command received on port %d\n", port);
@@ -695,10 +695,13 @@ Index: src/sys/net/kiss_tty.c
 +		return 0;
 +	}
 +
-+	if (np->fesc) {
-+		/* the last byte was a FESC. */
-+		int escaped = 0;
++	if (c == KISSFESC) {
++		sc->sc_flags |= KISSSC_ESCAPE;
++		return 0;
++	}
 +
++	if (sc->sc_flags & KISSSC_ESCAPE) {
++		int escaped = 0;
 +		switch (c) {
 +		case KISSTFESC:
 +			escaped = KISSFESC;
@@ -707,26 +710,30 @@ Index: src/sys/net/kiss_tty.c
 +			escaped = KISSFEND;
 +			break;
 +		}
-+
-+		if (escaped && np->pos < (KISSMAX - 1))
-+			np->cbuf[np->pos++] = escaped;
-+
-+		/* TODO: handle invalid escape sequence */
-+
-+		np->fesc = 0;
-+		return 0;
++		if (escaped) {
++			c = escaped;
++		} else {
++			/* abort this packet. */
++			sc->sc_flags &= ~KISSSC_DATA;
++		}
++		sc->sc_flags &= ~KISSSC_ESCAPE;
 +	}
 +
-+	if (c == KISSFESC) {
-+		np->fesc = 1;
-+		return 0;
++	if (sc->sc_flags & KISSSC_DATA) {
++		if (sc->pos < (KISSMAX - 1)) {
++			sc->cbuf[sc->pos++] = c;
++		} else {
++			/* abort the packet. */
++			sc->sc_flags &= ~KISSSC_DATA;
++		}
 +	}
-+
-+	printf(" in %d ", c);
-+	if (np->data && np->pos < (KISSMAX - 1))
-+		np->cbuf[np->pos++] = c;
-+	/* TODO: record error, frame too long */
 +	return 0;
++}
++
++static void
++kissinputdone(struct kiss_softc *sc) {
++	struct mbuf *m = m_devget(sc->cbuf, sc->pos, 0);
++	if_vinput(&sc->sc_if, m);
 +}
 +
 +/* output a kiss frame with packet data from an mbuf. */
@@ -738,11 +745,15 @@ Index: src/sys/net/kiss_tty.c
 +	s = spltty();
 +	putc(KISSFEND, &tp->t_outq);
 +	putc(KISSCMD_DATA, &tp->t_outq); /* implicitly port 0 */
++	splx(s);
 +	for (;;) {
++		s = spltty();
 +		kissoutputdata(tp, m);
++		splx(s);
 +		if ((m = m_free(m)) == NULL)
 +			break;
 +	}
++	s = spltty();
 +	putc(KISSFEND, &tp->t_outq);
 +	splx(s);
 +	ttstart(tp);
@@ -750,7 +761,7 @@ Index: src/sys/net/kiss_tty.c
 +
 +}
 +
-+/* output data from a single packet, escaping as required. */
++/* output data from a single mbuf, escaping as required. */
 +static void
 +kissoutputdata(struct tty *tp, struct mbuf *m)
 +{
@@ -763,9 +774,11 @@ Index: src/sys/net/kiss_tty.c
 +	for (cp = start; cp < stop; cp++) {
 +		switch(*cp) {
 +		case KISSFESC:
++			putc(KISSFESC, &tp->t_outq);
 +			putc(KISSTFESC, &tp->t_outq);
 +			break;
 +		case KISSFEND:
++			putc(KISSFESC, &tp->t_outq);
 +			putc(KISSTFEND, &tp->t_outq);
 +			break;
 +		default:
