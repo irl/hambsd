@@ -3,10 +3,8 @@ Description:
  Introduces a new tty line discipline and network interface driver to
  support the use of Ethernet with a KISS TNC.
 ---
-Index: src/distrib/sets/lists/comp/mi
-===================================================================
---- src.orig/distrib/sets/lists/comp/mi
-+++ src/distrib/sets/lists/comp/mi
+--- a/distrib/sets/lists/comp/mi
++++ b/distrib/sets/lists/comp/mi
 @@ -944,6 +944,7 @@
  ./usr/include/net/if_etherip.h
  ./usr/include/net/if_gif.h
@@ -15,10 +13,8 @@ Index: src/distrib/sets/lists/comp/mi
  ./usr/include/net/if_llc.h
  ./usr/include/net/if_media.h
  ./usr/include/net/if_mobileip.h
-Index: src/sbin/ldattach/ldattach.8
-===================================================================
---- src.orig/sbin/ldattach/ldattach.8
-+++ src/sbin/ldattach/ldattach.8
+--- a/sbin/ldattach/ldattach.8
++++ b/sbin/ldattach/ldattach.8
 @@ -14,7 +14,7 @@
  .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
@@ -28,7 +24,7 @@ Index: src/sbin/ldattach/ldattach.8
  .Dt LDATTACH 8
  .Os
  .Sh NAME
-@@ -117,6 +117,10 @@ line discipline.
+@@ -117,6 +117,10 @@
  Attach the
  .Xr nmea 4
  line discipline.
@@ -39,7 +35,7 @@ Index: src/sbin/ldattach/ldattach.8
  .El
  .It Ar device
  Specifies the name of the serial line.
-@@ -163,6 +167,7 @@ tty01	"/sbin/ldattach nmea"	unknown	on s
+@@ -163,6 +167,7 @@
  .Xr endrun 4 ,
  .Xr msts 4 ,
  .Xr nmea 4 ,
@@ -47,11 +43,9 @@ Index: src/sbin/ldattach/ldattach.8
  .Xr pty 4 ,
  .Xr tty 4 ,
  .Xr ttys 5 ,
-Index: src/sbin/ldattach/ldattach.c
-===================================================================
---- src.orig/sbin/ldattach/ldattach.c
-+++ src/sbin/ldattach/ldattach.c
-@@ -205,6 +205,8 @@ main(int argc, char *argv[])
+--- a/sbin/ldattach/ldattach.c
++++ b/sbin/ldattach/ldattach.c
+@@ -205,6 +205,8 @@
  		ldisc = MSTSDISC;
  	} else if (!strcmp(disc, "endrun")) {
  		ldisc = ENDRUNDISC;
@@ -60,10 +54,8 @@ Index: src/sbin/ldattach/ldattach.c
  	} else {
  		syslog(LOG_ERR, "unknown line discipline %s", disc);
  		goto bail_out;
-Index: src/share/man/man4/kiss.4
-===================================================================
 --- /dev/null
-+++ src/share/man/man4/kiss.4
++++ b/share/man/man4/kiss.4
 @@ -0,0 +1,71 @@
 +.\"	$OpenBSD$
 +.\"
@@ -136,11 +128,9 @@ Index: src/share/man/man4/kiss.4
 +.Re
 +.Sh BUGS
 +Currently, too many to enumerate. Look out for TODO: entries in the codebase.
-Index: src/sys/conf/GENERIC
-===================================================================
---- src.orig/sys/conf/GENERIC
-+++ src/sys/conf/GENERIC
-@@ -82,6 +82,7 @@ pseudo-device	msts	1	# MSTS line discipl
+--- a/sys/conf/GENERIC
++++ b/sys/conf/GENERIC
+@@ -82,6 +82,7 @@
  pseudo-device	endrun	1	# EndRun line discipline
  pseudo-device	vnd	4	# vnode disk devices
  pseudo-device	ksyms	1	# kernel symbols device
@@ -148,11 +138,9 @@ Index: src/sys/conf/GENERIC
  
  # clonable devices
  pseudo-device	bpfilter	# packet filter
-Index: src/sys/conf/files
-===================================================================
---- src.orig/sys/conf/files
-+++ src/sys/conf/files
-@@ -545,6 +545,7 @@ pseudo-device pty: tty
+--- a/sys/conf/files
++++ b/sys/conf/files
+@@ -545,6 +545,7 @@
  pseudo-device nmea: tty
  pseudo-device msts: tty
  pseudo-device endrun: tty
@@ -160,7 +148,7 @@ Index: src/sys/conf/files
  
  pseudo-device loop: ifnet
  pseudo-device pair: ifnet, ether
-@@ -794,6 +795,8 @@ file net/if_ethersubr.c			ether			needs-
+@@ -794,6 +795,8 @@
  file net/if_etherip.c			etherip			needs-flag
  file net/if_spppsubr.c			sppp
  file net/if_loop.c			loop
@@ -169,10 +157,8 @@ Index: src/sys/conf/files
  file net/if_media.c			ifmedia
  file net/if_ppp.c			ppp			needs-count
  file net/ppp_tty.c			ppp
-Index: src/sys/kern/tty_conf.c
-===================================================================
---- src.orig/sys/kern/tty_conf.c
-+++ src/sys/kern/tty_conf.c
+--- a/sys/kern/tty_conf.c
++++ b/sys/kern/tty_conf.c
 @@ -46,6 +46,7 @@
  #include "nmea.h"
  #include "msts.h"
@@ -181,7 +167,7 @@ Index: src/sys/kern/tty_conf.c
  
  #define	ttynodisc ((int (*)(dev_t, struct tty *, struct proc *))enodev)
  #define	ttyerrclose ((int (*)(struct tty *, int flags, struct proc *))enodev)
-@@ -107,6 +108,14 @@ struct	linesw linesw[] =
+@@ -107,6 +108,14 @@
  #else
  	{ ttynodisc, ttyerrclose, ttyerrio, ttyerrio, nullioctl,
  	  ttyerrinput, ttyerrstart, nullmodem },
@@ -196,11 +182,9 @@ Index: src/sys/kern/tty_conf.c
  #endif
  };
  
-Index: src/sys/net/if_kiss.c
-===================================================================
 --- /dev/null
-+++ src/sys/net/if_kiss.c
-@@ -0,0 +1,288 @@
++++ b/sys/net/if_kiss.c
+@@ -0,0 +1,286 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -400,12 +384,11 @@ Index: src/sys/net/if_kiss.c
 +{
 +	struct ifnet *ifp = ifq->ifq_if;
 +	struct kiss_softc *sc = ifp->if_softc;
-+	struct tty *tp = sc->sc_devp;
 +
 +	smr_read_enter();
 +	struct mbuf *m;
 +	while ((m = ifq_dequeue(ifq)) != NULL)
-+		kissoutput(tp, m);
++		kissoutput(sc, m);
 +	smr_read_leave();
 +}
 +
@@ -423,7 +406,6 @@ Index: src/sys/net/if_kiss.c
 +	/* if there's the wrong ldisc then abort */
 +
 +	sc = ifp->if_softc;
-+	struct tty *tp = sc->sc_devp;
 +
 +	if (sc->sc_devp == NULL)
 +		return (EINVAL);
@@ -431,7 +413,7 @@ Index: src/sys/net/if_kiss.c
 +	counters_pkt(ifp->if_counters,
 +	    ifc_opackets, ifc_obytes, m->m_pkthdr.len);
 +
-+	kissoutput(tp, m);
++	kissoutput(sc, m);
 +
 +	return (error);
 +}
@@ -489,10 +471,8 @@ Index: src/sys/net/if_kiss.c
 +
 +	return (0);
 +}
-Index: src/sys/net/if_kiss.h
-===================================================================
 --- /dev/null
-+++ src/sys/net/if_kiss.h
++++ b/sys/net/if_kiss.h
 @@ -0,0 +1,60 @@
 +
 +/* Structures and declarations for KISS. */
@@ -550,15 +530,13 @@ Index: src/sys/net/if_kiss.h
 +};
 +
 +struct kiss_softc *kissalloc(pid_t pid);
-+void kissoutput(struct tty *tp, struct mbuf *m);
++void kissoutput(struct kiss_softc *sc, struct mbuf *m);
 +void kissregister(struct kiss_softc *sc);
 +
 +#endif /* _NET_IF_KISS_H_ */
-Index: src/sys/net/kiss_tty.c
-===================================================================
 --- /dev/null
-+++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,263 @@
++++ b/sys/net/kiss_tty.c
+@@ -0,0 +1,277 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -608,9 +586,8 @@ Index: src/sys/net/kiss_tty.c
 +
 +LIST_HEAD(, kiss_softc) kiss_softc_list;
 +
-+static void kissreturn(struct tty *tp);
-+static void kissoutputdata(struct tty *tp, struct mbuf *m);
-+static void kissinputdone(struct kiss_softc *sc);
++void kissreturn(struct tty *tp);
++void kissinputdone(struct kiss_softc *sc);
 +
 +/* take over a tty and match with a kiss net interface. */
 +int
@@ -655,7 +632,7 @@ Index: src/sys/net/kiss_tty.c
 +}
 +
 +/* send command to tnc to exit kiss mode. */
-+static void
++void
 +kissreturn(struct tty *tp)
 +{
 +	putc(KISSCMD_RETURN, &tp->t_outq);
@@ -730,7 +707,7 @@ Index: src/sys/net/kiss_tty.c
 +	return 0;
 +}
 +
-+static void
++void
 +kissinputdone(struct kiss_softc *sc) {
 +	struct mbuf *m = m_devget(sc->cbuf, sc->pos, 0);
 +	if_vinput(&sc->sc_if, m);
@@ -738,56 +715,71 @@ Index: src/sys/net/kiss_tty.c
 +
 +/* output a kiss frame with packet data from an mbuf. */
 +void
-+kissoutput(struct tty *tp, struct mbuf *m) {
++kissoutput(struct kiss_softc *sc, struct mbuf *m) {
 +	int s;
++	register u_char *cp;
++	struct tty *tp = (struct tty *)sc->sc_devp;
 +
 +	smr_read_enter(); // TODO: what is this protecting?
 +	s = spltty();
 +	putc(KISSFEND, &tp->t_outq);
 +	putc(KISSCMD_DATA, &tp->t_outq); /* implicitly port 0 */
-+	splx(s);
-+	for (;;) {
-+		s = spltty();
-+		kissoutputdata(tp, m);
-+		splx(s);
-+		if ((m = m_free(m)) == NULL)
-+			break;
++
++	while (m) {
++		register u_char *ep;
++
++		cp = mtod(m, u_char *); ep = cp + m->m_len;
++		while (cp < ep) {
++			/*
++			 * Find out how many bytes in the string we can
++			 * handle without doing something special.
++			 */
++			register u_char *bp = cp;
++
++			while (cp < ep) {
++				switch (*cp++) {
++				case KISSFESC:
++				case KISSFEND:
++					--cp;
++					goto out;
++				}
++			}
++			out:
++			if (cp > bp) {
++				/*
++				 * Put n characters at once
++				 * into the tty output queue.
++				 */
++				if (b_to_q((char *)bp, cp - bp,
++				    &tp->t_outq))
++					break;
++				sc->sc_if.if_obytes += cp - bp;
++			}
++			/*
++			 * If there are characters left in the mbuf,
++			 * the first one must be special..
++			 * Put it out in a different form.
++			 */
++			if (cp < ep) {
++				if (putc(KISSFESC, &tp->t_outq))
++					break;
++				if (putc(*cp++ == KISSFESC ?
++				   KISSTFESC : KISSTFEND,
++				   &tp->t_outq)) {
++					(void) unputc(&tp->t_outq);
++					break;
++				}
++				sc->sc_if.if_obytes += 2;
++			}
++		}
++		m = m_free(m);
 +	}
-+	s = spltty();
++
 +	putc(KISSFEND, &tp->t_outq);
 +	splx(s);
 +	ttstart(tp);
 +	smr_read_leave();
-+
 +}
-+
-+/* output data from a single mbuf, escaping as required. */
-+static void
-+kissoutputdata(struct tty *tp, struct mbuf *m)
-+{
-+	u_char *start, *stop, *cp;
-+	int len;
-+
-+	start = mtod(m, u_char *);
-+	len = m->m_len;
-+	stop = start + len;
-+	for (cp = start; cp < stop; cp++) {
-+		switch(*cp) {
-+		case KISSFESC:
-+			putc(KISSFESC, &tp->t_outq);
-+			putc(KISSTFESC, &tp->t_outq);
-+			break;
-+		case KISSFEND:
-+			putc(KISSFESC, &tp->t_outq);
-+			putc(KISSTFEND, &tp->t_outq);
-+			break;
-+		default:
-+			putc(*cp, &tp->t_outq);
-+			break;
-+		}
-+	}
-+}
-+
 +
 +/* allocate the first available network interface. */
 +struct kiss_softc *
@@ -822,11 +814,9 @@ Index: src/sys/net/kiss_tty.c
 +	LIST_INSERT_HEAD(&kiss_softc_list, sc, sc_list);
 +	NET_UNLOCK();
 +}
-Index: src/sys/sys/tty.h
-===================================================================
---- src.orig/sys/sys/tty.h
-+++ src/sys/sys/tty.h
-@@ -333,4 +333,9 @@ int	endrunopen(dev_t, struct tty *, stru
+--- a/sys/sys/tty.h
++++ b/sys/sys/tty.h
+@@ -333,4 +333,9 @@
  int	endrunclose(struct tty *, int, struct proc *);
  int	endruninput(int, struct tty *);
  
@@ -836,11 +826,9 @@ Index: src/sys/sys/tty.h
 +int	kissstart(struct tty *);
 +
  #endif /* _KERNEL */
-Index: src/sys/sys/ttycom.h
-===================================================================
---- src.orig/sys/sys/ttycom.h
-+++ src/sys/sys/ttycom.h
-@@ -147,5 +147,6 @@ struct tstamps {
+--- a/sys/sys/ttycom.h
++++ b/sys/sys/ttycom.h
+@@ -147,5 +147,6 @@
  #define	NMEADISC	7		/* NMEA0183 discipline */
  #define	MSTSDISC	8		/* Meinberg time string discipline */
  #define	ENDRUNDISC	9		/* EndRun time format discipline */
