@@ -595,7 +595,7 @@ Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,278 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -786,7 +786,7 @@ Index: src/sys/net/kiss_tty.c
 +
 +	while (m) {
 +		register u_char *ep;
-+
++		printf("output mbuf\n");
 +		cp = mtod(m, u_char *); ep = cp + m->m_len;
 +		while (cp < ep) {
 +			/*
@@ -796,6 +796,7 @@ Index: src/sys/net/kiss_tty.c
 +			register u_char *bp = cp;
 +
 +			while (cp < ep) {
++				printf("0x%uh ", *cp);
 +				switch (*cp++) {
 +				case KISSFESC:
 +				case KISSFEND:
