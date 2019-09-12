@@ -837,9 +837,9 @@ Index: src/sys/net/kiss_tty.c
 +	}
 +
 +	putc(KISSFEND, &tp->t_outq);
-+	ttstart(tp);
 +	splx(s);
 +	smr_read_leave();
++	ttstart(tp);
 +}
 +
 +/* allocate the first available network interface. */
