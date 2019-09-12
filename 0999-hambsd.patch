@@ -1,16 +1,3 @@
-Index: src/sys/conf/newvers.sh
-===================================================================
---- src.orig/sys/conf/newvers.sh
-+++ src/sys/conf/newvers.sh
-@@ -67,7 +67,7 @@ id=`basename "${d}"`
- #	A month or so before release, select STATUS "-beta"
- #	and disable POOL_DEBUG in sys/conf/GENERIC
- 
--ost="OpenBSD"
-+ost="HamBSD"
- osr="6.6"
- 
- cat >vers.c <<eof
 Index: src/etc/motd
 ===================================================================
 --- src.orig/etc/motd
