@@ -757,7 +757,7 @@ Index: src/sys/net/kiss_tty.c
 +
 +	if (sc->sc_flags & KISSSC_DATA) {
 +		if (sc->pos < (KISSMAX - 1)) {
-+			printf("0x%u ", *cp);
++			printf("0x%u ", c);
 +			sc->cbuf[sc->pos++] = c;
 +		} else {
 +			/* abort the packet. */
