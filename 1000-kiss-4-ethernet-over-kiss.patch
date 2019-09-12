@@ -3,8 +3,10 @@ Description:
  Introduces a new tty line discipline and network interface driver to
  support the use of Ethernet with a KISS TNC.
 ---
---- a/distrib/sets/lists/comp/mi
-+++ b/distrib/sets/lists/comp/mi
+Index: src/distrib/sets/lists/comp/mi
+===================================================================
+--- src.orig/distrib/sets/lists/comp/mi
++++ src/distrib/sets/lists/comp/mi
 @@ -944,6 +944,7 @@
  ./usr/include/net/if_etherip.h
  ./usr/include/net/if_gif.h
@@ -13,8 +15,10 @@ Description:
  ./usr/include/net/if_llc.h
  ./usr/include/net/if_media.h
  ./usr/include/net/if_mobileip.h
---- a/sbin/ldattach/ldattach.8
-+++ b/sbin/ldattach/ldattach.8
+Index: src/sbin/ldattach/ldattach.8
+===================================================================
+--- src.orig/sbin/ldattach/ldattach.8
++++ src/sbin/ldattach/ldattach.8
 @@ -14,7 +14,7 @@
  .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
@@ -24,7 +28,7 @@ Description:
  .Dt LDATTACH 8
  .Os
  .Sh NAME
-@@ -117,6 +117,10 @@
+@@ -117,6 +117,10 @@ line discipline.
  Attach the
  .Xr nmea 4
  line discipline.
@@ -35,7 +39,7 @@ Description:
  .El
  .It Ar device
  Specifies the name of the serial line.
-@@ -163,6 +167,7 @@
+@@ -163,6 +167,7 @@ tty01	"/sbin/ldattach nmea"	unknown	on s
  .Xr endrun 4 ,
  .Xr msts 4 ,
  .Xr nmea 4 ,
@@ -43,9 +47,11 @@ Description:
  .Xr pty 4 ,
  .Xr tty 4 ,
  .Xr ttys 5 ,
---- a/sbin/ldattach/ldattach.c
-+++ b/sbin/ldattach/ldattach.c
-@@ -205,6 +205,8 @@
+Index: src/sbin/ldattach/ldattach.c
+===================================================================
+--- src.orig/sbin/ldattach/ldattach.c
++++ src/sbin/ldattach/ldattach.c
+@@ -205,6 +205,8 @@ main(int argc, char *argv[])
  		ldisc = MSTSDISC;
  	} else if (!strcmp(disc, "endrun")) {
  		ldisc = ENDRUNDISC;
@@ -54,9 +60,11 @@ Description:
  	} else {
  		syslog(LOG_ERR, "unknown line discipline %s", disc);
  		goto bail_out;
+Index: src/share/man/man4/kiss.4
+===================================================================
 --- /dev/null
-+++ b/share/man/man4/kiss.4
-@@ -0,0 +1,71 @@
++++ src/share/man/man4/kiss.4
+@@ -0,0 +1,109 @@
 +.\"	$OpenBSD$
 +.\"
 +.\" Copyright (c) 1983, 1991, 1993
@@ -94,43 +102,83 @@ Description:
 +.Os
 +.Sh NAME
 +.Nm kiss
-+.Nd KISS network interface
++.Nd KISS line discipline
 +.Sh SYNOPSIS
 +.Cd "pseudo-device kiss"
 +.Sh DESCRIPTION
 +The
 +.Nm
-+interface allows serial lines to be used as network interfaces using the
-+.Em KISS protocol.
++line discipline can be attached to serial lines to communicate with a TNC,
++including the following:
++.Bl -bullet
++.It
++Dire Wolf
++.El
 +.Pp
-+A
-+.Nm
-+interface can be created at runtime using the
-+.Ic ifconfig kiss Ns Ar N Ic create
-+command or by setting up a
-+.Xr hostname.if 5
-+configuration file for
-+.Xr netstart 8 .
++When this line discipline is first attached, it will in turn attach to the first
++available
++.Xr ekiss 4
++network interface, or any other interface that has registered with the line
++discipline.
++.Pp
++For general use, once the interface has been created and configured, the line
++discipline can be attached using
++.Xr ldattach 8 .
++For example, assuming the TNC is connected to
++.Pa /dev/cua00 :
++.Bd -literal
++$ ldattach kiss cua00
++.Ed
++.Pp
++The line discipline is also enabled by the following sequence:
++.Bd -literal -offset indent
++#include <sys/ioctl.h>
++int ldisc = KISSDISC, fd; ...
++ioctl(fd, TIOCSETD, &ldisc);
++.Ed
++.Pp
++Input and output on the serial line is then intercepted and handled by the
++kernel, and will not be available via the
++.Xr read 2
++and
++.Xr write 2
++system calls.
++.Sh MULTI-DROP KISS
++.Pp
++The line discipline is aware of multi-drop in as far as incoming data on ports
++other than 0 will be ignored and will not trigger error conditions. The
++additional commands, acknowledge or polled mode, are not implemented. All data
++will be sent on port 0.
 +.Sh SEE ALSO
-+.Xr inet 4 ,
-+.Xr ldattach 8 ,
-+.Xr hostname.if 5 ,
-+.Xr ifconfig 8 ,
-+.Xr netstart 8
++.Xr tty 4 ,
++.Xr ldattach 8
 +.Sh REFERENCES
++.Bl -bullet
++.It
 +.Rs
 +.%A Mike Chepponis, K3MC
 +.%A Phil Karn, KA9Q
 +.%D 1987
 +.%T The KISS TNC: A simple Host-to-TNC communications protocol
 +.%B ARRL 6th Computer Networking Conference
-+.%C Redondo Beach CA.
++.%C Redondo Beach, CA, United States.
 +.Re
++.It
++.Rs
++.%A Karl Medcalf, WK5M
++.%D 1991
++.%T Multi-Drop KISS operation
++.%B ARRL 10th Computer Networking Conference
++.%C San Jose, CA, United States.
++.Re
++.El
 +.Sh BUGS
 +Currently, too many to enumerate. Look out for TODO: entries in the codebase.
---- a/sys/conf/GENERIC
-+++ b/sys/conf/GENERIC
-@@ -82,6 +82,7 @@
+Index: src/sys/conf/GENERIC
+===================================================================
+--- src.orig/sys/conf/GENERIC
++++ src/sys/conf/GENERIC
+@@ -82,6 +82,7 @@ pseudo-device	msts	1	# MSTS line discipl
  pseudo-device	endrun	1	# EndRun line discipline
  pseudo-device	vnd	4	# vnode disk devices
  pseudo-device	ksyms	1	# kernel symbols device
@@ -138,9 +186,11 @@ Description:
  
  # clonable devices
  pseudo-device	bpfilter	# packet filter
---- a/sys/conf/files
-+++ b/sys/conf/files
-@@ -545,6 +545,7 @@
+Index: src/sys/conf/files
+===================================================================
+--- src.orig/sys/conf/files
++++ src/sys/conf/files
+@@ -545,6 +545,7 @@ pseudo-device pty: tty
  pseudo-device nmea: tty
  pseudo-device msts: tty
  pseudo-device endrun: tty
@@ -148,7 +198,7 @@ Description:
  
  pseudo-device loop: ifnet
  pseudo-device pair: ifnet, ether
-@@ -794,6 +795,8 @@
+@@ -794,6 +795,8 @@ file net/if_ethersubr.c			ether			needs-
  file net/if_etherip.c			etherip			needs-flag
  file net/if_spppsubr.c			sppp
  file net/if_loop.c			loop
@@ -157,8 +207,10 @@ Description:
  file net/if_media.c			ifmedia
  file net/if_ppp.c			ppp			needs-count
  file net/ppp_tty.c			ppp
---- a/sys/kern/tty_conf.c
-+++ b/sys/kern/tty_conf.c
+Index: src/sys/kern/tty_conf.c
+===================================================================
+--- src.orig/sys/kern/tty_conf.c
++++ src/sys/kern/tty_conf.c
 @@ -46,6 +46,7 @@
  #include "nmea.h"
  #include "msts.h"
@@ -167,7 +219,7 @@ Description:
  
  #define	ttynodisc ((int (*)(dev_t, struct tty *, struct proc *))enodev)
  #define	ttyerrclose ((int (*)(struct tty *, int flags, struct proc *))enodev)
-@@ -107,6 +108,14 @@
+@@ -107,6 +108,14 @@ struct	linesw linesw[] =
  #else
  	{ ttynodisc, ttyerrclose, ttyerrio, ttyerrio, nullioctl,
  	  ttyerrinput, ttyerrstart, nullmodem },
@@ -182,8 +234,10 @@ Description:
  #endif
  };
  
+Index: src/sys/net/if_kiss.c
+===================================================================
 --- /dev/null
-+++ b/sys/net/if_kiss.c
++++ src/sys/net/if_kiss.c
 @@ -0,0 +1,286 @@
 +/*	$OpenBSD$ */
 +
@@ -471,8 +525,10 @@ Description:
 +
 +	return (0);
 +}
+Index: src/sys/net/if_kiss.h
+===================================================================
 --- /dev/null
-+++ b/sys/net/if_kiss.h
++++ src/sys/net/if_kiss.h
 @@ -0,0 +1,60 @@
 +
 +/* Structures and declarations for KISS. */
@@ -534,8 +590,10 @@ Description:
 +void kissregister(struct kiss_softc *sc);
 +
 +#endif /* _NET_IF_KISS_H_ */
+Index: src/sys/net/kiss_tty.c
+===================================================================
 --- /dev/null
-+++ b/sys/net/kiss_tty.c
++++ src/sys/net/kiss_tty.c
 @@ -0,0 +1,277 @@
 +/*	$OpenBSD$ */
 +
@@ -814,9 +872,11 @@ Description:
 +	LIST_INSERT_HEAD(&kiss_softc_list, sc, sc_list);
 +	NET_UNLOCK();
 +}
---- a/sys/sys/tty.h
-+++ b/sys/sys/tty.h
-@@ -333,4 +333,9 @@
+Index: src/sys/sys/tty.h
+===================================================================
+--- src.orig/sys/sys/tty.h
++++ src/sys/sys/tty.h
+@@ -333,4 +333,9 @@ int	endrunopen(dev_t, struct tty *, stru
  int	endrunclose(struct tty *, int, struct proc *);
  int	endruninput(int, struct tty *);
  
@@ -826,12 +886,101 @@ Description:
 +int	kissstart(struct tty *);
 +
  #endif /* _KERNEL */
---- a/sys/sys/ttycom.h
-+++ b/sys/sys/ttycom.h
-@@ -147,5 +147,6 @@
+Index: src/sys/sys/ttycom.h
+===================================================================
+--- src.orig/sys/sys/ttycom.h
++++ src/sys/sys/ttycom.h
+@@ -147,5 +147,6 @@ struct tstamps {
  #define	NMEADISC	7		/* NMEA0183 discipline */
  #define	MSTSDISC	8		/* Meinberg time string discipline */
  #define	ENDRUNDISC	9		/* EndRun time format discipline */
 +#define	KISSDISC	10		/* KISS TNC discipline */
  
  #endif /* !_SYS_TTYCOM_H_ */
+Index: src/share/man/man4/ekiss.4
+===================================================================
+--- /dev/null
++++ src/share/man/man4/ekiss.4
+@@ -0,0 +1,82 @@
++.\"	$OpenBSD$
++.\"
++.\" Copyright (c) 1983, 1991, 1993
++.\"	The Regents of the University of California.  All rights reserved.
++.\" Copyright (c) 2019 Iain R. Leamonth <irl@fsfe.org>
++.\"
++.\" Redistribution and use in source and binary forms, with or without
++.\" modification, are permitted provided that the following conditions
++.\" are met:
++.\" 1. Redistributions of source code must retain the above copyright
++.\"    notice, this list of conditions and the following disclaimer.
++.\" 2. Redistributions in binary form must reproduce the above copyright
++.\"    notice, this list of conditions and the following disclaimer in the
++.\"    documentation and/or other materials provided with the distribution.
++.\" 3. Neither the name of the University nor the names of its contributors
++.\"    may be used to endorse or promote products derived from this software
++.\"    without specific prior written permission.
++.\"
++.\" THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
++.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
++.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++.\" SUCH DAMAGE.
++.\"
++.\"     From:	@(#)lo.4	8.1 (Berkeley) 6/5/93
++.\"
++.Dd $Mdocdate: September 01 2019 $
++.Dt KISS 4
++.Os
++.Sh NAME
++.Nm ekiss
++.Nd Ethernet-over-KISS network interface
++.Sh SYNOPSIS
++.Cd "pseudo-device ekiss"
++.Sh DESCRIPTION
++The
++.Nm
++interface allows serial lines to be used as network interfaces using the
++.Em KISS protocol.
++.Pp
++A
++.Nm
++interface can be created at runtime using the
++.Ic ifconfig kiss Ns Ar N Ic create
++command or by setting up a
++.Xr hostname.if 5
++configuration file for
++.Xr netstart 8 .
++.Sh SEE ALSO
++.Xr inet 4 ,
++.Xr ldattach 8 ,
++.Xr hostname.if 5 ,
++.Xr ifconfig 8 ,
++.Xr netstart 8
++.Sh STANDARDS
++.Bl -bullet
++.It
++.Rs
++.%A Mike Chepponis, K3MC
++.%A Phil Karn, KA9Q
++.%D 1987
++.%T The KISS TNC: A simple Host-to-TNC communications protocol
++.%B ARRL 6th Computer Networking Conference
++.%C Redondo Beach, CA, United States.
++.Re
++.It
++.Rs
++.%A Karl Medcalf, WK5M
++.%D 1991
++.%T Multi-Drop KISS operation
++.%B ARRL 10th Computer Networking Conference
++.%C San Jose, CA, United States.
++.Re
++.El
++.Sh BUGS
++Currently, too many to enumerate. Look out for TODO: entries in the codebase.
