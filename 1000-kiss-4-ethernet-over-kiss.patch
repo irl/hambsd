@@ -238,7 +238,7 @@ Index: src/sys/net/if_kiss.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/if_kiss.c
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,287 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -341,6 +341,7 @@ Index: src/sys/net/if_kiss.c
 +	ifp->if_hardmtu = ETHER_MAX_HARDMTU_LEN;
 +	ifp->if_ioctl = kiss_ioctl;
 +	ifp->if_qstart = kiss_start;
++	ifp->if_output = ether_output;
 +	ifp->if_enqueue = kiss_enqueue;
 +	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
 +	ifp->if_xflags = IFXF_CLONED | IFXF_MPSAFE;
