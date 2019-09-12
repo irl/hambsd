@@ -595,7 +595,7 @@ Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,279 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -757,6 +757,7 @@ Index: src/sys/net/kiss_tty.c
 +
 +	if (sc->sc_flags & KISSSC_DATA) {
 +		if (sc->pos < (KISSMAX - 1)) {
++			printf("0x%u ", *cp);
 +			sc->cbuf[sc->pos++] = c;
 +		} else {
 +			/* abort the packet. */
@@ -796,7 +797,7 @@ Index: src/sys/net/kiss_tty.c
 +			register u_char *bp = cp;
 +
 +			while (cp < ep) {
-+				printf("0x%uh ", *cp);
++				printf("0x%u ", *cp);
 +				switch (*cp++) {
 +				case KISSFESC:
 +				case KISSFEND:
