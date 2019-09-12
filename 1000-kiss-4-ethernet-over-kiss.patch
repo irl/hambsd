@@ -595,7 +595,7 @@ Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,279 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -837,6 +837,7 @@ Index: src/sys/net/kiss_tty.c
 +	}
 +
 +	putc(KISSFEND, &tp->t_outq);
++	ttstart(tp);
 +	splx(s);
 +	smr_read_leave();
 +}
