@@ -594,7 +594,7 @@ Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,276 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -718,13 +718,12 @@ Index: src/sys/net/kiss_tty.c
 +
 +		switch (command) {
 +		case KISSCMD_DATA:
-+			printf("data command received on port %d\n", port);
 +			sc->port = port;
 +			sc->pos = 0;
 +			sc->sc_flags |= KISSSC_DATA;
 +			break;
 +		default:
-+			printf("unrecognised command received on port %d\n", port);
++			printf("kiss: unrecognised command received on port %d\n", port);
 +			break;
 +		}
 +		return 0;
