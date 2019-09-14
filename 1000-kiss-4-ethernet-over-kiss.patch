@@ -594,7 +594,7 @@ Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,290 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -623,6 +623,8 @@ Index: src/sys/net/kiss_tty.c
 +
 +/* A tty line discipline to communicate with a KISS terminal node controller. */
 +
++#include "bpfilter.h"
++
 +#include <sys/param.h>
 +#include <sys/systm.h>
 +#include <sys/malloc.h>
@@ -630,6 +632,8 @@ Index: src/sys/net/kiss_tty.c
 +#include <sys/conf.h>
 +#include <sys/proc.h>
 +#include <sys/smr.h>
++
++#include <net/bpf.h>
 +
 +#include <net/if.h>
 +#include <net/if_dl.h>
@@ -776,6 +780,16 @@ Index: src/sys/net/kiss_tty.c
 +	int s;
 +	register u_char *cp;
 +	struct tty *tp = (struct tty *)sc->sc_devp;
++#if NBPFILTER > 0
++	struct ifnet *ifp = &sc->sc_if;
++
++	if (ifp->if_bpf) {
++		if (bpf_mtap_ether(ifp->if_bpf, m, BPF_DIRECTION_OUT)) {
++			m_freem(m);
++			return;
++		}
++	}
++#endif
 +
 +	smr_read_enter(); // TODO: what is this protecting?
 +	s = spltty();
