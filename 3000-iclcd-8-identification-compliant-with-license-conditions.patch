@@ -173,11 +173,11 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +
 +	memcpy(buf, header, 15);
 +	framelen = 15; // prefix is 15 bytes
-+	calllen = strlcpy(&buf[14], call, 25);
++	calllen = strlcpy(&buf[15], call, 26);
 +	if (calllen > 25) {
 +		fatal("callsign in /etc/mycallsign too long");
 +	}
-+	framelen = framelen + calllen - 1; // remove the NUL from end of call
++	framelen = framelen + calllen;
 +	return framelen;
 +}
 +
@@ -274,7 +274,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	if ((bpf = openbpf(interface)) == -1)
 +		fatal("failed to open bpf interface");
 +
-+	char framebuf[40];
++	char framebuf[41]; // extra byte for a terminating NUL, not txd
 +	char *call = mycallsign();
 +	int framelen = composeframe(framebuf, call);
 +	int unslept;
