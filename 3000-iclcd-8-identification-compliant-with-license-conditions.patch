@@ -53,7 +53,7 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +.It Fl D
 +Do not daemonize.
 +.It Fl i Ar interface
-+Interface name to broadcast ident frames (default: kiss0).
++Interface name to broadcast ident frames (default: ekiss0).
 +.It Fl p Ar period
 +Period in seconds between broadcasts (default: 60).
 +.Sh PROTOCOL DETAILS
@@ -243,7 +243,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	/* option defaults */
 +	daemon = 1;
 +	period = 60;
-+	interface = "kiss0"; // default
++	interface = "ekiss0"; // default
 +
 +	while ((ch = getopt(argc, argv, "i:p:D")) != -1) {
 +		switch (ch) {
