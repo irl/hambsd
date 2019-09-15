@@ -1,0 +1,12 @@
+Index: src/distrib/sets/lists/man/mi
+===================================================================
+--- src.orig/distrib/sets/lists/man/mi
++++ src/distrib/sets/lists/man/mi
+@@ -2125,6 +2125,7 @@
+ ./usr/share/man/man5/mk.conf.5
+ ./usr/share/man/man5/moduli.5
+ ./usr/share/man/man5/motd.5
++./usr/share/man/man5/mycallsign.5
+ ./usr/share/man/man5/myname.5
+ ./usr/share/man/man5/netgroup.5
+ ./usr/share/man/man5/netid.5
