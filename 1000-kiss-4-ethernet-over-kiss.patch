@@ -15,51 +15,6 @@ Index: src/distrib/sets/lists/comp/mi
  ./usr/include/net/if_llc.h
  ./usr/include/net/if_media.h
  ./usr/include/net/if_mobileip.h
-Index: src/sbin/ldattach/ldattach.8
-===================================================================
---- src.orig/sbin/ldattach/ldattach.8
-+++ src/sbin/ldattach/ldattach.8
-@@ -14,7 +14,7 @@
- .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- .\"
--.Dd $Mdocdate: October 2 2014 $
-+.Dd $Mdocdate: September 01 2019 $
- .Dt LDATTACH 8
- .Os
- .Sh NAME
-@@ -117,6 +117,10 @@ line discipline.
- Attach the
- .Xr nmea 4
- line discipline.
-+.It kiss
-+Attach the
-+.Xr kiss 4
-+line discipline.
- .El
- .It Ar device
- Specifies the name of the serial line.
-@@ -163,6 +167,7 @@ tty01	"/sbin/ldattach nmea"	unknown	on s
- .Xr endrun 4 ,
- .Xr msts 4 ,
- .Xr nmea 4 ,
-+.Xr kiss 4 ,
- .Xr pty 4 ,
- .Xr tty 4 ,
- .Xr ttys 5 ,
-Index: src/sbin/ldattach/ldattach.c
-===================================================================
---- src.orig/sbin/ldattach/ldattach.c
-+++ src/sbin/ldattach/ldattach.c
-@@ -205,6 +205,8 @@ main(int argc, char *argv[])
- 		ldisc = MSTSDISC;
- 	} else if (!strcmp(disc, "endrun")) {
- 		ldisc = ENDRUNDISC;
-+	} else if (!strcmp(disc, "kiss")) {
-+		ldisc = KISSDISC;
- 	} else {
- 		syslog(LOG_ERR, "unknown line discipline %s", disc);
- 		goto bail_out;
 Index: src/sys/conf/GENERIC
 ===================================================================
 --- src.orig/sys/conf/GENERIC

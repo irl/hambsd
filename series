@@ -2,7 +2,8 @@
 0999-hambsd.patch
 1000-kiss-4-ethernet-over-kiss.patch
 1005-kiss-4-man-page.patch
-1010-pstat-8-display-text-for-kiss-line-disc.patch
+1010-ldattach-8-add-kiss.patch
+1011-pstat-8-display-text-for-kiss-line-disc.patch
 1105-ekiss-4-man-page.patch
 1110-ekiss-4-add-to-sets.patch
 2000-mycallsign-5-Add-man-page.patch
