@@ -1,0 +1,12 @@
+Index: src/distrib/sets/lists/man/mi
+===================================================================
+--- src.orig/distrib/sets/lists/man/mi
++++ src/distrib/sets/lists/man/mi
+@@ -1346,6 +1346,7 @@
+ ./usr/share/man/man4/eg.4
+ ./usr/share/man/man4/ehci.4
+ ./usr/share/man/man4/eisa.4
++./usr/share/man/man4/ekiss.4
+ ./usr/share/man/man4/el.4
+ ./usr/share/man/man4/em.4
+ ./usr/share/man/man4/emc.4
