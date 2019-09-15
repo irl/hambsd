@@ -27,6 +27,14 @@ Index: src/sys/conf/GENERIC
  
  # clonable devices
  pseudo-device	bpfilter	# packet filter
+@@ -108,6 +109,7 @@ pseudo-device	vether		# Virtual ethernet
+ pseudo-device	vxlan		# Virtual extensible LAN
+ pseudo-device	vlan		# IEEE 802.1Q VLAN
+ pseudo-device	switch		# Switch
++pseudo-device	ekiss		# Ethernet-over-KISS
+ 
+ pseudo-device	bio	1	# ioctl multiplexing device
+ 
 Index: src/sys/conf/files
 ===================================================================
 --- src.orig/sys/conf/files
@@ -238,7 +246,7 @@ Index: src/sys/net/kiss_tty.c
 +	kiss_count++;
 +	ks->ks_netp = sc;
 +	sc->sc_devp = (void*)tp;
-+	tp->t_sc = (caddr_t)sc;
++	tp->t_sc = (caddr_t)ks;
 +
 +	error = linesw[TTYDISC].l_open(dev, tp, p);
 +	// TODO: do we really need to call this?
@@ -546,7 +554,7 @@ Index: src/sys/net/if_ekiss.c
 +static int	ekiss_down(struct ekiss_softc *);
 +static int	ekiss_iff(struct ekiss_softc *);
 +
-+static struct if_clone kiss_cloner =
++static struct if_clone ekiss_cloner =
 +    IF_CLONE_INITIALIZER("ekiss", ekiss_clone_create, ekiss_clone_destroy);
 +
 +void
@@ -665,7 +673,7 @@ Index: src/sys/net/if_ekiss.c
 +	}
 +
 +	if (error == ENETRESET)
-+		error = kiss_iff(sc);
++		error = ekiss_iff(sc);
 +
 +	return (error);
 +}
