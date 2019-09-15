@@ -96,8 +96,8 @@ Index: src/share/man/man4/kiss.4
 +system calls.
 +.Sh MULTI-DROP KISS
 +.Pp
-+The line discipline is aware of multi-drop in as far as incoming data on ports
-+other than 0 will be ignored and will not trigger error conditions. The
++The line discipline is aware of multi-drop in as far as incoming data on all
++ports will be accepted and will not trigger error conditions. The
 +additional commands, acknowledge or polled mode, are not implemented. All data
 +will be sent on port 0.
 +.Sh SEE ALSO
