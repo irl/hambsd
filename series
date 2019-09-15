@@ -1,6 +1,7 @@
 0000-pstat-8-display-text-for-msts-endrun-line-discs.patch
 0999-hambsd.patch
 1000-kiss-4-ethernet-over-kiss.patch
+1005-kiss-4-man-page.patch
 1010-pstat-8-display-text-for-kiss-line-disc.patch
 1105-ekiss-4-man-page.patch
 1110-ekiss-4-add-to-sets.patch
