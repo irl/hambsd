@@ -39,11 +39,19 @@ Index: src/sys/conf/files
  
  pseudo-device loop: ifnet
  pseudo-device pair: ifnet, ether
-@@ -794,6 +795,8 @@ file net/if_ethersubr.c			ether			needs-
+@@ -572,6 +573,7 @@ pseudo-device vether: ifnet, ether
+ pseudo-device pppx: ifnet
+ pseudo-device vxlan: ifnet, ether, ifmedia
+ pseudo-device switch: ifnet, ether
++pseudo-device ekiss: ifnet, ether, ifmedia
+ 
+ pseudo-device ksyms
+ file	dev/ksyms.c			ksyms needs-flag
+@@ -794,6 +796,8 @@ file net/if_ethersubr.c			ether			needs-
  file net/if_etherip.c			etherip			needs-flag
  file net/if_spppsubr.c			sppp
  file net/if_loop.c			loop
-+file net/if_kiss.c			kiss
++file net/if_ekiss.c			ekiss
 +file net/kiss_tty.c			kiss			needs-flag
  file net/if_media.c			ifmedia
  file net/if_ppp.c			ppp			needs-count
@@ -75,367 +83,38 @@ Index: src/sys/kern/tty_conf.c
  #endif
  };
  
-Index: src/sys/net/if_kiss.c
-===================================================================
---- /dev/null
-+++ src/sys/net/if_kiss.c
-@@ -0,0 +1,286 @@
-+/*	$OpenBSD$ */
-+
-+/*
-+ * Copyright (c) 2019 Iain R. Learmonth <irl@fsfe.org>
-+ *
-+ * Permission to use, copy, modify, and distribute this software for any
-+ * purpose with or without fee is hereby granted, provided that the above
-+ * copyright notice and this permission notice appear in all copies.
-+ *
-+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-+ */
-+
-+/*
-+ *  TODO:
-+ *
-+ * - Rename to ekiss, expecting a future axkiss interface.
-+ * - Make sure that both ekiss and axkiss can share kiss(4) line disc.
-+ * - This might mean not using the same software control block for both.
-+ */
-+
-+/* A network interface using Ethernet over a KISS TNC. */
-+
-+#include <sys/param.h>
-+#include <sys/kernel.h>
-+#include <sys/malloc.h>
-+#include <sys/mbuf.h>
-+#include <sys/queue.h>
-+#include <sys/socket.h>
-+#include <sys/sockio.h>
-+#include <sys/systm.h>
-+#include <sys/syslog.h>
-+#include <sys/rwlock.h>
-+#include <sys/percpu.h>
-+#include <sys/smr.h>
-+#include <sys/task.h>
-+
-+#include <sys/tty.h>
-+#include <sys/fcntl.h>
-+
-+#include <net/if.h>
-+#include <net/if_dl.h>
-+#include <net/if_types.h>
-+
-+#include <net/if_media.h>
-+
-+#include <netinet/in.h>
-+#include <netinet/if_ether.h>
-+
-+#include <net/if_kiss.h>
-+
-+static int	kiss_clone_create(struct if_clone *, int);
-+static int	kiss_clone_destroy(struct ifnet *);
-+
-+static int	kiss_ioctl(struct ifnet *, u_long, caddr_t);
-+static void	kiss_start(struct ifqueue *);
-+static int	kiss_enqueue(struct ifnet *, struct mbuf *);
-+
-+static int	kiss_media_change(struct ifnet *);
-+static void	kiss_media_status(struct ifnet *, struct ifmediareq *);
-+
-+static int	kiss_up(struct kiss_softc *);
-+static int	kiss_down(struct kiss_softc *);
-+static int	kiss_iff(struct kiss_softc *);
-+
-+static struct if_clone kiss_cloner =
-+    IF_CLONE_INITIALIZER("kiss", kiss_clone_create, kiss_clone_destroy);
-+
-+void
-+kissattach(int count)
-+{
-+	if_clone_attach(&kiss_cloner);
-+}
-+
-+static int
-+kiss_clone_create(struct if_clone *ifc, int unit)
-+{
-+	struct kiss_softc *sc;
-+	struct ifnet *ifp;
-+
-+	sc = malloc(sizeof(*sc), M_DEVBUF, M_WAITOK|M_ZERO|M_CANFAIL);
-+	if (sc == NULL)
-+		return (ENOMEM);
-+
-+	ifp = &sc->sc_if;
-+
-+	snprintf(ifp->if_xname, sizeof(ifp->if_xname), "%s%d",
-+	    ifc->ifc_name, unit);
-+
-+	ifmedia_init(&sc->sc_media, 0, kiss_media_change, kiss_media_status);
-+	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
-+	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
-+
-+	ifp->if_softc = sc;
-+	ifp->if_hardmtu = ETHER_MAX_HARDMTU_LEN;
-+	ifp->if_ioctl = kiss_ioctl;
-+	ifp->if_qstart = kiss_start;
-+	ifp->if_enqueue = kiss_enqueue;
-+	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
-+	ifp->if_xflags = IFXF_CLONED | IFXF_MPSAFE;
-+	ifp->if_link_state = LINK_STATE_DOWN;
-+	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
-+	ether_fakeaddr(ifp);
-+
-+	if_counters_alloc(ifp);
-+	if_attach(ifp);
-+	ether_ifattach(ifp);
-+
-+	ifp->if_llprio = IFQ_MAXPRIO;
-+
-+	kissregister(sc);
-+
-+	return (0);
-+}
-+
-+static int
-+kiss_clone_destroy(struct ifnet *ifp)
-+{
-+	struct kiss_softc *sc = ifp->if_softc;
-+
-+	NET_LOCK();
-+	sc->sc_dead = 1;
-+
-+	if (ISSET(ifp->if_flags, IFF_RUNNING))
-+		kiss_down(sc);
-+	NET_UNLOCK();
-+
-+	ether_ifdetach(ifp);
-+	if_detach(ifp);
-+
-+	free(sc, M_DEVBUF, sizeof(*sc));
-+
-+	return (0);
-+}
-+
-+static int
-+kiss_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
-+{
-+	struct kiss_softc *sc = ifp->if_softc;
-+	struct ifreq *ifr = (struct ifreq *)data;
-+	int error = 0;
-+
-+	if (sc->sc_dead)
-+		return (ENXIO);
-+
-+	switch (cmd) {
-+	case SIOCSIFADDR:
-+		break;
-+
-+	case SIOCSIFFLAGS:
-+		if (ISSET(ifp->if_flags, IFF_UP)) {
-+			if (!ISSET(ifp->if_flags, IFF_RUNNING))
-+				error = kiss_up(sc);
-+			else
-+				error = ENETRESET;
-+		} else {
-+			if (ISSET(ifp->if_flags, IFF_RUNNING))
-+				error = kiss_down(sc);
-+		}
-+		break;
-+
-+	case SIOCSIFLLADDR:
-+		error = EOPNOTSUPP;
-+		//error = kiss_set_lladdr(sc, ifr);
-+		break;
-+
-+	case SIOCSIFMTU:
-+		error = EOPNOTSUPP;
-+		//error = kiss_set_mtu(sc, ifr->ifr_mtu);
-+		break;
-+
-+	case SIOCSIFMEDIA:
-+		error = EOPNOTSUPP;
-+		break;
-+	case SIOCGIFMEDIA:
-+		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
-+		break;
-+
-+	default:
-+		error = ether_ioctl(ifp, &sc->sc_ac, cmd, data);
-+		break;
-+	}
-+
-+	if (error == ENETRESET)
-+		error = kiss_iff(sc);
-+
-+	return (error);
-+}
-+
-+static void
-+kiss_start(struct ifqueue *ifq)
-+{
-+	struct ifnet *ifp = ifq->ifq_if;
-+	struct kiss_softc *sc = ifp->if_softc;
-+
-+	smr_read_enter();
-+	struct mbuf *m;
-+	while ((m = ifq_dequeue(ifq)) != NULL)
-+		kissoutput(sc, m);
-+	smr_read_leave();
-+}
-+
-+static int
-+kiss_enqueue(struct ifnet *ifp, struct mbuf *m)
-+{
-+	struct kiss_softc *sc;
-+	int error;
-+
-+	error = 0;
-+
-+	if (!ifq_is_priq(&ifp->if_snd))
-+		return (if_enqueue_ifq(ifp, m));
-+
-+	/* if there's the wrong ldisc then abort */
-+
-+	sc = ifp->if_softc;
-+
-+	if (sc->sc_devp == NULL)
-+		return (EINVAL);
-+
-+	counters_pkt(ifp->if_counters,
-+	    ifc_opackets, ifc_obytes, m->m_pkthdr.len);
-+
-+	kissoutput(sc, m);
-+
-+	return (error);
-+}
-+
-+static int
-+kiss_media_change(struct ifnet *ifp)
-+{
-+	return (EOPNOTSUPP);
-+}
-+
-+static void
-+kiss_media_status(struct ifnet *ifp, struct ifmediareq *imr)
-+{
-+	//struct kiss_softc *sc = ifp->if_softc;
-+
-+	imr->ifm_status = IFM_AVALID;
-+	imr->ifm_active = IFM_ETHER | IFM_AUTO | IFM_ACTIVE;
-+}
-+
-+static int
-+kiss_up(struct kiss_softc *sc)
-+{
-+	struct ifnet *ifp = &sc->sc_if;
-+
-+	NET_ASSERT_LOCKED();
-+	KASSERT(!ISSET(ifp->if_flags, IFF_RUNNING));
-+
-+	SET(ifp->if_flags, IFF_RUNNING);
-+
-+	return (ENETRESET);
-+}
-+
-+static int
-+kiss_down(struct kiss_softc *sc)
-+{
-+	struct ifnet *ifp = &sc->sc_if;
-+
-+	NET_ASSERT_LOCKED();
-+	CLR(ifp->if_flags, IFF_RUNNING);
-+
-+	return (ENETRESET);
-+}
-+
-+static int
-+kiss_iff(struct kiss_softc *sc)
-+{
-+	struct ifnet *ifp = &sc->sc_if;
-+	unsigned int promisc = ISSET(ifp->if_flags, IFF_PROMISC);
-+
-+	NET_ASSERT_LOCKED();
-+
-+	if (promisc != sc->sc_promisc) {
-+		sc->sc_promisc = promisc;
-+	}
-+
-+	return (0);
-+}
 Index: src/sys/net/if_kiss.h
 ===================================================================
 --- /dev/null
 +++ src/sys/net/if_kiss.h
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,22 @@
 +
 +/* Structures and declarations for KISS. */
 +
 +#ifndef _NET_IF_KISS_H_
 +#define _NET_IF_KISS_H_
 +
-+/* TODO: Some of these may need to be public, some private, split it up? */
-+
-+#ifdef KISS_DEBUG
-+#define DPRINTFN(n, x)	do { if (kissdebug > (n)) printf x; } while (0)
-+int kissdebug = 0;
-+#else
-+#define DPRINTFN(n, x)
-+#endif
-+#define DPRINTF(x)	DPRINTFN(0, x)
-+
-+#define KISSMAX		1512 /* chosen arbitrarily; TODO: do better */
-+
-+#define KISSFEND	0xC0 /* frame end */
-+#define KISSFESC	0xDB /* frame escape */
-+#define KISSTFEND	0xDC /* transposed frame end */
-+#define KISSTFESC	0xDD /* transposed frame escape */
-+
-+#define KISSCMD_DATA		0x00
-+#define KISSCMD_TXDELAY		0x01 /* in 10 ms units */
-+#define KISSCMD_PERSIST		0x02 /* used for CSMA */
-+#define KISSCMD_SLOTTIME	0x03 /* in 10 ms units */
-+#define KISSCMD_TXTAIL		0x04 /* in 10 ms units */
-+#define KISSCMD_FULLDUPLEX	0x05 /* 0=half, anything else=full */
-+#define KISSCMD_SETHARDWARE	0x06 /* this is not implemented anywhere here */
-+#define KISSCMD_RETURN		0xFF /* on all ports */
-+
-+#define KISSSC_NEW	1
-+#define KISSSC_DATA	2
-+#define KISSSC_ESCAPE	4
-+
-+struct kiss_softc {
-+	/* network interface */
-+	struct arpcom		sc_ac;
-+#define sc_if			sc_ac.ac_if
-+	unsigned int		sc_dead;
-+	unsigned int		sc_promisc;
-+	struct ifmedia		sc_media;
-+
-+	/* line discipline */
++struct ekiss_softc {
++	struct arpcom		 sc_ac;
++#define sc_if			 sc_ac.ac_if
++	unsigned int		 sc_dead;
++	unsigned int		 sc_promisc;
++	struct ifmedia		 sc_media;
 +	void			*sc_devp; /* tty */
-+	int			port; /* port index of current recvd data */
-+	char			cbuf[KISSMAX];	/* receive buffer */
-+	int			pos; /* position in rcv buffer */
-+	unsigned int		sc_flags; /* see KISSSC_* */
-+
-+	pid_t	sc_xfer; /* used in transferring unit */
-+	LIST_ENTRY(kiss_softc) sc_list; /* all kiss interfaces */
++	pid_t			sc_xfer; /* used in transferring unit */
++	LIST_ENTRY(ekiss_softc)	sc_list; /* all kiss interfaces */
 +};
 +
-+struct kiss_softc *kissalloc(pid_t pid);
-+void kissoutput(struct kiss_softc *sc, struct mbuf *m);
-+void kissregister(struct kiss_softc *sc);
++struct ekiss_softc	*kissalloc(pid_t pid);
++void			 kissoutput(struct ekiss_softc *sc, struct mbuf *m);
++void			 kissregister(struct ekiss_softc *sc);
 +
 +#endif /* _NET_IF_KISS_H_ */
 Index: src/sys/net/kiss_tty.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/kiss_tty.c
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,332 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -487,16 +166,62 @@ Index: src/sys/net/kiss_tty.c
 +
 +#include <net/if_kiss.h>
 +
-+LIST_HEAD(, kiss_softc) kiss_softc_list;
++#ifdef KISS_DEBUG
++#define DPRINTFN(n, x)	do { if (kissdebug > (n)) printf x; } while (0)
++int kissdebug = 0;
++#else
++#define DPRINTFN(n, x)
++#endif
++#define DPRINTF(x)	DPRINTFN(0, x)
 +
-+void kissreturn(struct tty *tp);
-+void kissinputdone(struct kiss_softc *sc);
++#define KISSMAX		1512 /* chosen arbitrarily; TODO: do better */
++
++/* special characters */
++#define KISSFEND	0xC0 /* frame end */
++#define KISSFESC	0xDB /* frame escape */
++#define KISSTFEND	0xDC /* transposed frame end */
++#define KISSTFESC	0xDD /* transposed frame escape */
++
++/* commands */
++#define KISSCMD_DATA		0x00
++#define KISSCMD_TXDELAY		0x01 /* in 10 ms units */
++#define KISSCMD_PERSIST		0x02 /* used for CSMA */
++#define KISSCMD_SLOTTIME	0x03 /* in 10 ms units */
++#define KISSCMD_TXTAIL		0x04 /* in 10 ms units */
++#define KISSCMD_FULLDUPLEX	0x05 /* 0=half, anything else=full */
++#define KISSCMD_SETHARDWARE	0x06 /* this is not implemented anywhere here */
++#define KISSCMD_RETURN		0xFF /* on all ports */
++
++LIST_HEAD(, ekiss_softc) kiss_softc_list;
++
++int kiss_count, kiss_nxid;
++
++/* flags for (struct kiss)->sc_flags */
++#define KISSFLAG_NEW	1
++#define KISSFLAG_DATA	2
++#define KISSFLAG_ESCAPE	4
++
++/* software control block for kiss line discipline */
++struct kiss {
++	char			 ks_cbuf[KISSMAX];	/* reveive buffer */
++	int			 ks_flags;		/* async line flags; KISSFLAG_* */
++	int			 ks_id;			/* instance id */
++	int			 ks_port;		/* rcv from port */
++	int			 ks_pos;		/* rcv buf position */
++	struct ekiss_softc	*ks_netp;		/* interface sc */
++#define ks_devp			 ks_netp->sc_devp
++};
++
++void kissattach(int dummy) {
++	/* noop */
++}
 +
 +/* take over a tty and match with a kiss net interface. */
 +int
 +kissopen(dev_t dev, struct tty *tp, struct proc *p)
 +{
-+	struct kiss_softc *sc;
++	struct ekiss_softc *sc;
++	struct kiss *ks;
 +	int error;
 +
 +	if (tp->t_line == KISSDISC)
@@ -507,13 +232,18 @@ Index: src/sys/net/kiss_tty.c
 +		/* most likely there are no kissN interfaces */
 +		return ENXIO;
 +	}
++	ks = malloc(sizeof(struct kiss), M_DEVBUF, M_WAITOK | M_ZERO);
 +
-+	tp->t_sc = (caddr_t)sc;
++	ks->ks_id = kiss_nxid++;
++	kiss_count++;
++	ks->ks_netp = sc;
 +	sc->sc_devp = (void*)tp;
++	tp->t_sc = (caddr_t)sc;
 +
 +	error = linesw[TTYDISC].l_open(dev, tp, p);
 +	// TODO: do we really need to call this?
 +	if (error) {
++		free(sc, M_DEVBUF, sizeof(*sc));
 +		tp->t_sc = NULL;
 +	}
 +	return (error);
@@ -523,49 +253,45 @@ Index: src/sys/net/kiss_tty.c
 +int
 +kissclose(struct tty *tp, int flags, struct proc *p)
 +{
-+	struct kiss_softc *sc = (struct kiss_softc *)tp->t_sc;
-+	sc->sc_devp = NULL;
-+	//free(sc, M_DEVBUF, sizeof(*sc));
-+	// TODO: the sc is owned by if_kiss.c, make sure we free it there
-+	kissreturn(tp); /* return TNC from KISS mode */
++	struct kiss *ks = (struct kiss *)tp->t_sc;
++	ks->ks_devp = NULL;
++	free(ks, M_DEVBUF, sizeof(*ks));
 +	tp->t_line = TTYDISC;	/* switch back to termios */
 +	tp->t_sc = NULL;
++	kiss_count--;
++	if (kiss_count == 0)
++		kiss_nxid = 0;
 +	return (linesw[TTYDISC].l_close(tp, flags, p));
 +	// TODO: do we really need to call this?
-+}
-+
-+/* send command to tnc to exit kiss mode. */
-+void
-+kissreturn(struct tty *tp)
-+{
-+	putc(KISSCMD_RETURN, &tp->t_outq);
 +}
 +
 +/* tty input interrupt handler. collects kiss frames. */
 +int
 +kissinput(int c, struct tty *tp)
 +{
-+	struct kiss_softc *sc = (struct kiss_softc *)tp->t_sc;
++	struct kiss *ks = (struct kiss *)tp->t_sc;
 +
 +	if (c == KISSFEND) {
-+		if (sc->sc_flags & KISSSC_DATA && sc->pos > 14)
-+			kissinputdone(sc);
-+		sc->sc_flags = KISSSC_NEW;
++		if (ks->ks_flags & KISSFLAG_DATA && ks->ks_pos > 14) {
++			struct mbuf *m = m_devget(ks->ks_cbuf, ks->ks_pos, 0);
++			if_vinput(&ks->ks_netp->sc_if, m);
++		}
++		ks->ks_flags = KISSFLAG_NEW;
 +		return 0;
 +	}
 +
-+	if (sc->sc_flags & KISSSC_NEW) {
++	if (ks->ks_flags & KISSFLAG_NEW) {
 +		/* this is the first byte in a new frame. */
 +		int port = (c & 0xF0) >> 4;
 +		int command = c & 0x0F;
 +
-+		sc->sc_flags = 0;
++		ks->ks_flags = 0;
 +
 +		switch (command) {
 +		case KISSCMD_DATA:
-+			sc->port = port;
-+			sc->pos = 0;
-+			sc->sc_flags |= KISSSC_DATA;
++			ks->ks_port = port;
++			ks->ks_pos = 0;
++			ks->ks_flags |= KISSFLAG_DATA;
 +			break;
 +		default:
 +			printf("kiss: unrecognised command received on port %d\n", port);
@@ -575,11 +301,11 @@ Index: src/sys/net/kiss_tty.c
 +	}
 +
 +	if (c == KISSFESC) {
-+		sc->sc_flags |= KISSSC_ESCAPE;
++		ks->ks_flags |= KISSFLAG_ESCAPE;
 +		return 0;
 +	}
 +
-+	if (sc->sc_flags & KISSSC_ESCAPE) {
++	if (ks->ks_flags & KISSFLAG_ESCAPE) {
 +		int escaped = 0;
 +		switch (c) {
 +		case KISSTFESC:
@@ -593,31 +319,25 @@ Index: src/sys/net/kiss_tty.c
 +			c = escaped;
 +		} else {
 +			/* abort this packet. */
-+			sc->sc_flags &= ~KISSSC_DATA;
++			ks->ks_flags &= ~KISSFLAG_DATA;
 +		}
-+		sc->sc_flags &= ~KISSSC_ESCAPE;
++		ks->ks_flags &= ~KISSFLAG_ESCAPE;
 +	}
 +
-+	if (sc->sc_flags & KISSSC_DATA) {
-+		if (sc->pos < (KISSMAX - 1)) {
-+			sc->cbuf[sc->pos++] = c;
++	if (ks->ks_flags & KISSFLAG_DATA) {
++		if (ks->ks_pos < (KISSMAX - 1)) {
++			ks->ks_cbuf[ks->ks_pos++] = c;
 +		} else {
 +			/* abort the packet. */
-+			sc->sc_flags &= ~KISSSC_DATA;
++			ks->ks_flags &= ~KISSFLAG_DATA;
 +		}
 +	}
 +	return 0;
 +}
 +
-+void
-+kissinputdone(struct kiss_softc *sc) {
-+	struct mbuf *m = m_devget(sc->cbuf, sc->pos, 0);
-+	if_vinput(&sc->sc_if, m);
-+}
-+
 +/* output a kiss frame with packet data from an mbuf. */
 +void
-+kissoutput(struct kiss_softc *sc, struct mbuf *m) {
++kissoutput(struct ekiss_softc *sc, struct mbuf *m) {
 +	int s;
 +	register u_char *cp;
 +	struct tty *tp = (struct tty *)sc->sc_devp;
@@ -694,10 +414,10 @@ Index: src/sys/net/kiss_tty.c
 +}
 +
 +/* allocate the first available network interface. */
-+struct kiss_softc *
++struct ekiss_softc *
 +kissalloc(pid_t pid)
 +{
-+	struct kiss_softc *sc;
++	struct ekiss_softc *sc;
 +
 +	NET_LOCK();
 +	LIST_FOREACH(sc, &kiss_softc_list, sc_list) {
@@ -720,24 +440,24 @@ Index: src/sys/net/kiss_tty.c
 +
 +/* register a kiss interface with the line discipline. */
 +void
-+kissregister(struct kiss_softc *sc)
++kissregister(struct ekiss_softc *sc)
 +{
 +	NET_LOCK();
 +	LIST_INSERT_HEAD(&kiss_softc_list, sc, sc_list);
 +	NET_UNLOCK();
 +}
++
 Index: src/sys/sys/tty.h
 ===================================================================
 --- src.orig/sys/sys/tty.h
 +++ src/sys/sys/tty.h
-@@ -333,4 +333,9 @@ int	endrunopen(dev_t, struct tty *, stru
+@@ -333,4 +333,8 @@ int	endrunopen(dev_t, struct tty *, stru
  int	endrunclose(struct tty *, int, struct proc *);
  int	endruninput(int, struct tty *);
  
 +int	kissopen(dev_t, struct tty *, struct proc *);
 +int	kissclose(struct tty *, int, struct proc *);
 +int	kissinput(int, struct tty *);
-+int	kissstart(struct tty *);
 +
  #endif /* _KERNEL */
 Index: src/sys/sys/ttycom.h
@@ -751,3 +471,294 @@ Index: src/sys/sys/ttycom.h
 +#define	KISSDISC	10		/* KISS TNC discipline */
  
  #endif /* !_SYS_TTYCOM_H_ */
+Index: src/sys/net/if_ekiss.c
+===================================================================
+--- /dev/null
++++ src/sys/net/if_ekiss.c
+@@ -0,0 +1,286 @@
++/*	$OpenBSD$ */
++
++/*
++ * Copyright (c) 2019 Iain R. Learmonth <irl@fsfe.org>
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++/*
++ *  TODO:
++ *
++ * - Rename to ekiss, expecting a future axkiss interface.
++ * - Make sure that both ekiss and axkiss can share kiss(4) line disc.
++ * - This might mean not using the same software control block for both.
++ */
++
++/* A network interface using Ethernet over a KISS TNC. */
++
++#include <sys/param.h>
++#include <sys/kernel.h>
++#include <sys/malloc.h>
++#include <sys/mbuf.h>
++#include <sys/queue.h>
++#include <sys/socket.h>
++#include <sys/sockio.h>
++#include <sys/systm.h>
++#include <sys/syslog.h>
++#include <sys/rwlock.h>
++#include <sys/percpu.h>
++#include <sys/smr.h>
++#include <sys/task.h>
++
++#include <sys/tty.h>
++#include <sys/fcntl.h>
++
++#include <net/if.h>
++#include <net/if_dl.h>
++#include <net/if_types.h>
++
++#include <net/if_media.h>
++
++#include <netinet/in.h>
++#include <netinet/if_ether.h>
++
++#include <net/if_kiss.h>
++
++static int	ekiss_clone_create(struct if_clone *, int);
++static int	ekiss_clone_destroy(struct ifnet *);
++
++static int	ekiss_ioctl(struct ifnet *, u_long, caddr_t);
++static void	ekiss_start(struct ifqueue *);
++static int	ekiss_enqueue(struct ifnet *, struct mbuf *);
++
++static int	ekiss_media_change(struct ifnet *);
++static void	ekiss_media_status(struct ifnet *, struct ifmediareq *);
++
++static int	ekiss_up(struct ekiss_softc *);
++static int	ekiss_down(struct ekiss_softc *);
++static int	ekiss_iff(struct ekiss_softc *);
++
++static struct if_clone kiss_cloner =
++    IF_CLONE_INITIALIZER("ekiss", ekiss_clone_create, ekiss_clone_destroy);
++
++void
++ekissattach(int count)
++{
++	if_clone_attach(&ekiss_cloner);
++}
++
++static int
++ekiss_clone_create(struct if_clone *ifc, int unit)
++{
++	struct ekiss_softc *sc;
++	struct ifnet *ifp;
++
++	sc = malloc(sizeof(*sc), M_DEVBUF, M_WAITOK|M_ZERO|M_CANFAIL);
++	if (sc == NULL)
++		return (ENOMEM);
++
++	ifp = &sc->sc_if;
++
++	snprintf(ifp->if_xname, sizeof(ifp->if_xname), "%s%d",
++	    ifc->ifc_name, unit);
++
++	ifmedia_init(&sc->sc_media, 0, ekiss_media_change, ekiss_media_status);
++	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
++	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
++
++	ifp->if_softc = sc;
++	ifp->if_hardmtu = ETHER_MAX_HARDMTU_LEN;
++	ifp->if_ioctl = ekiss_ioctl;
++	ifp->if_qstart = ekiss_start;
++	ifp->if_enqueue = ekiss_enqueue;
++	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
++	ifp->if_xflags = IFXF_CLONED | IFXF_MPSAFE;
++	ifp->if_link_state = LINK_STATE_DOWN;
++	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
++	ether_fakeaddr(ifp);
++
++	if_counters_alloc(ifp);
++	if_attach(ifp);
++	ether_ifattach(ifp);
++
++	ifp->if_llprio = IFQ_MAXPRIO;
++
++	kissregister(sc);
++
++	return (0);
++}
++
++static int
++ekiss_clone_destroy(struct ifnet *ifp)
++{
++	struct ekiss_softc *sc = ifp->if_softc;
++
++	NET_LOCK();
++	sc->sc_dead = 1;
++
++	if (ISSET(ifp->if_flags, IFF_RUNNING))
++		ekiss_down(sc);
++	NET_UNLOCK();
++
++	ether_ifdetach(ifp);
++	if_detach(ifp);
++
++	free(sc, M_DEVBUF, sizeof(*sc));
++
++	return (0);
++}
++
++static int
++ekiss_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
++{
++	struct ekiss_softc *sc = ifp->if_softc;
++	struct ifreq *ifr = (struct ifreq *)data;
++	int error = 0;
++
++	if (sc->sc_dead)
++		return (ENXIO);
++
++	switch (cmd) {
++	case SIOCSIFADDR:
++		break;
++
++	case SIOCSIFFLAGS:
++		if (ISSET(ifp->if_flags, IFF_UP)) {
++			if (!ISSET(ifp->if_flags, IFF_RUNNING))
++				error = ekiss_up(sc);
++			else
++				error = ENETRESET;
++		} else {
++			if (ISSET(ifp->if_flags, IFF_RUNNING))
++				error = ekiss_down(sc);
++		}
++		break;
++
++	case SIOCSIFLLADDR:
++		error = EOPNOTSUPP;
++		//error = kiss_set_lladdr(sc, ifr);
++		break;
++
++	case SIOCSIFMTU:
++		error = EOPNOTSUPP;
++		//error = kiss_set_mtu(sc, ifr->ifr_mtu);
++		break;
++
++	case SIOCSIFMEDIA:
++		error = EOPNOTSUPP;
++		break;
++	case SIOCGIFMEDIA:
++		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
++		break;
++
++	default:
++		error = ether_ioctl(ifp, &sc->sc_ac, cmd, data);
++		break;
++	}
++
++	if (error == ENETRESET)
++		error = kiss_iff(sc);
++
++	return (error);
++}
++
++static void
++ekiss_start(struct ifqueue *ifq)
++{
++	struct ifnet *ifp = ifq->ifq_if;
++	struct ekiss_softc *sc = ifp->if_softc;
++
++	smr_read_enter();
++	struct mbuf *m;
++	while ((m = ifq_dequeue(ifq)) != NULL)
++		kissoutput(sc, m);
++	smr_read_leave();
++}
++
++static int
++ekiss_enqueue(struct ifnet *ifp, struct mbuf *m)
++{
++	struct ekiss_softc *sc;
++	int error;
++
++	error = 0;
++
++	if (!ifq_is_priq(&ifp->if_snd))
++		return (if_enqueue_ifq(ifp, m));
++
++	/* if there's the wrong ldisc then abort */
++
++	sc = ifp->if_softc;
++
++	if (sc->sc_devp == NULL)
++		return (EINVAL);
++
++	counters_pkt(ifp->if_counters,
++	    ifc_opackets, ifc_obytes, m->m_pkthdr.len);
++
++	kissoutput(sc, m);
++
++	return (error);
++}
++
++static int
++ekiss_media_change(struct ifnet *ifp)
++{
++	return (EOPNOTSUPP);
++}
++
++static void
++ekiss_media_status(struct ifnet *ifp, struct ifmediareq *imr)
++{
++	//struct ekiss_softc *sc = ifp->if_softc;
++
++	imr->ifm_status = IFM_AVALID;
++	imr->ifm_active = IFM_ETHER | IFM_AUTO | IFM_ACTIVE;
++}
++
++static int
++ekiss_up(struct ekiss_softc *sc)
++{
++	struct ifnet *ifp = &sc->sc_if;
++
++	NET_ASSERT_LOCKED();
++	KASSERT(!ISSET(ifp->if_flags, IFF_RUNNING));
++
++	SET(ifp->if_flags, IFF_RUNNING);
++
++	return (ENETRESET);
++}
++
++static int
++ekiss_down(struct ekiss_softc *sc)
++{
++	struct ifnet *ifp = &sc->sc_if;
++
++	NET_ASSERT_LOCKED();
++	CLR(ifp->if_flags, IFF_RUNNING);
++
++	return (ENETRESET);
++}
++
++static int
++ekiss_iff(struct ekiss_softc *sc)
++{
++	struct ifnet *ifp = &sc->sc_if;
++	unsigned int promisc = ISSET(ifp->if_flags, IFF_PROMISC);
++
++	NET_ASSERT_LOCKED();
++
++	if (promisc != sc->sc_promisc) {
++		sc->sc_promisc = promisc;
++	}
++
++	return (0);
++}
