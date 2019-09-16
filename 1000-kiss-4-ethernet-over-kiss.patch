@@ -589,7 +589,7 @@ Index: src/sys/net/if_ekiss.c
 +	ifp->if_enqueue = ekiss_enqueue;
 +	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
 +	ifp->if_xflags = IFXF_CLONED | IFXF_MPSAFE;
-+	ifp->if_link_state = LINK_STATE_DOWN;
++	ifp->if_link_state = LINK_STATE_UP;
 +	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
 +	ether_fakeaddr(ifp);
 +
