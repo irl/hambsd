@@ -16,7 +16,7 @@ Index: src/usr.sbin/iclcd/iclcd.8
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.8
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,56 @@
 +.Dd September 7 2019
 +.Dt ICLCD 8
 +.Os
@@ -30,8 +30,9 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +.Op Fl p Ar period
 +.Sh DESCRIPTION
 +.Nm
-+sends raw Ethernet frames on the specified interface using Ethertype 0x4400
-+containing the contents of
++sends
++.Em hamdex
++identification frames using the contents of
 +.Pa /etc/mycallsign
 +up to either the first newline or to the end of the file.
 +.Pp
@@ -56,12 +57,6 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +Interface name to broadcast ident frames (default: ekiss0).
 +.It Fl p Ar period
 +Period in seconds between broadcasts (default: 60).
-+.Sh PROTOCOL DETAILS
-+The first byte of the Ethernet payload contains the version number of the iclcd
-+protocol, which currently is zero. The remainder of the packet contains the
-+callsign of the transmitting station encoded as
-+.Xr ascii 7
-+text.
 +.Sh DISCLAIMER
 +This may not be enough to comply with your local laws regarding identification
 +of amateur radio transmissions. This manual page is not legal advice.
@@ -70,6 +65,7 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +with a single instance. It is however possible to manually start multiple
 +instances.
 +.Sh SEE ALSO
++.Xr hamdex 7 ,
 +.Xr mycallsign 5 ,
 +.Xr kiss 4
 +.Sh AUTHORS
@@ -81,7 +77,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.c
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,213 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
 + *
@@ -167,14 +163,15 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	const char header[] = {
 +	  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // broadcast destination
 +	  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // source filled by bpf
-+	  0x44, 0x00,                         // ethertype
++	  0x88, 0xB5,                         // ethertype
++	  0x00,                               // subtype
 +	  0x00                                // version
 +	};
 +
-+	memcpy(buf, header, 15);
-+	framelen = 15; // prefix is 15 bytes
-+	calllen = strlcpy(&buf[15], call, 26);
-+	if (calllen > 25) {
++	memcpy(buf, header, 16);
++	framelen = 16; // prefix is 15 bytes
++	calllen = strlcpy(&buf[16], call, 25);
++	if (calllen > 24) {
 +		fatal("callsign in /etc/mycallsign too long");
 +	}
 +	framelen = framelen + calllen;
