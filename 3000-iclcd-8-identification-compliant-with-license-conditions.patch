@@ -4,12 +4,14 @@ Index: src/usr.sbin/iclcd/Makefile
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/Makefile
-@@ -0,0 +1,7 @@
+@@ -0,0 +1,9 @@
 +#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
 +
 +PROG=	iclcd
 +SRCS=	iclcd.c
 +MAN=	iclcd.8
++
++LDADD=  -lpthread
 +
 +.include <bsd.prog.mk>
 Index: src/usr.sbin/iclcd/iclcd.8
@@ -77,7 +79,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.c
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,350 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
 + *
@@ -92,6 +94,9 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +#include <syslog.h>
 +#include <stdarg.h>
 +#include <signal.h>
++#include <pthread.h>
++#include <errno.h>
++#include <sys/queue.h>
 +
 +#include <sys/times.h>
 +#include <sys/time.h>
@@ -99,6 +104,24 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +#include <net/bpf.h>
 +#include <sys/socket.h>
 +#include <net/if.h>
++#include <netinet/in.h>
++#include <netinet/if_ether.h>
++
++static struct bpf_insn insns[] = {
++	/* Check EtherType */
++	BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),
++	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x88B5, 0, 3),
++	/* Check HAMDEX SubType */
++	BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 15),
++	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 1),
++	BPF_STMT(BPF_RET | BPF_K, (u_int)-1),
++	BPF_STMT(BPF_RET | BPF_K, 0),
++};
++
++static struct bpf_program filter = {
++	sizeof insns / sizeof(insns[0]),
++	insns
++};
 +
 +__dead void
 +fatal(char* msg)
@@ -178,28 +201,43 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	return framelen;
 +}
 +
++/*
++ * Open a BPF file and attach it to the interface named 'device'.
++ * Set immediate mode, check it is an Ethernet interface, and set a
++ * filter that only accepts iclc frames.
++ */
 +int
-+openbpf(char *interface)
++iclc_open(char *device)
 +{
-+	char buf[11];
-+	int bpf, iflen;
++	int bpf, immediate, iflen;
 +	struct ifreq bound_if;
++	u_int dlt;
 +
-+	for (int i = 0; i < 99; i++)
-+	{
-+		sprintf(buf, "/dev/bpf%i", i);
-+		bpf = open(buf, O_RDWR);
-+		if (bpf != -1)
-+			break;
-+	}
++	if ((bpf = open("/dev/bpf", O_RDWR)) == -1)
++		fatal("/dev/bpf failed to open");
 +
-+	iflen = strlen(interface);
-+	if (strlcpy(bound_if.ifr_name, interface, sizeof(bound_if.ifr_name))
++	/* Set immediate mode to process packets as they arrive. */
++	immediate = 1;
++	if (ioctl(bpf, BIOCIMMEDIATE, &immediate) == -1)
++		fatal("failed to set immediate mode");
++
++	/* Bind the network interface. */
++	iflen = strlen(device);
++	if (strlcpy(bound_if.ifr_name, device, sizeof(bound_if.ifr_name))
 +	    < iflen)
 +		fatal("interface name too long");
++	if(ioctl(bpf, BIOCSETIF, (caddr_t)&bound_if) == -1)
++		fatal("could not bind to interface");
 +
-+	if(ioctl(bpf, BIOCSETIF, &bound_if) > 0)
-+		return -1;
++	/* Check the data link layer is Ethernet. */
++	if (ioctl(bpf, BIOCGDLT, (caddr_t)&dlt) == -1)
++		fatal("failed to get data link type");
++	if (dlt != DLT_EN10MB)
++		fatal("interface is not an ethernet");
++
++	/* Set filter program. */
++	if (ioctl(bpf, BIOCSETF, (caddr_t)&filter) == -1)
++		fatal("failed to set bpf filter");
 +
 +	return bpf;
 +}
@@ -231,21 +269,103 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	signal(SIGTERM, signal_handler); /* catch kill signal */
 +}
 +
++struct iclc_beacon_attrs {
++	char	*call;   /* callsign as ascii text */
++	char	*device; /* interface name */
++	int	 bpf;    /* bpf file handle */
++	int	 period; /* beacon period */
++};
++
++void *
++iclc_beacon_loop(void *arguments) {
++	// TODO: make beaconing optional, we want this in the kernel
++	struct iclc_beacon_attrs *attrs = (struct iclc_beacon_attrs *)arguments;
++	char framebuf[41]; // extra byte for a terminating NUL, not txd
++	int framelen = composeframe(framebuf, attrs->call);
++	int unslept;
++
++	syslog(LOG_DAEMON | LOG_INFO,
++	    "started up beacon thread (interface %s, callsign: %s)", attrs->device, attrs->call);
++
++	for (;;) {
++		if (write(attrs->bpf, &framebuf, framelen) != framelen) {
++			syslog(LOG_DAEMON | LOG_EMERG,
++			    "failed to send ident frame, might want to unplug");
++			syslog(LOG_DAEMON | LOG_ERR,
++			    "failure reason: %m");
++		}
++		unslept = attrs->period;
++		while (unslept > 0)
++			unslept = sleep(unslept);
++	}
++}
++
++struct iclc_ident {
++	char			call[40]; // TODO: magic numbers are bad
++	struct ether_addr	hwaddr;
++	SLIST_ENTRY(iclc_ident)	entries;
++};
++SLIST_HEAD(iclc_idents_list, iclc_ident) iclc_idents;
++
++void
++iclc_write()
++{
++	// TODO: use a binary format instead (and write a tool that can query it)
++	struct iclc_ident *idp;
++	FILE *hh = fopen("/var/db/heards.txt", "w");
++	if (hh == NULL) {
++		fatal("error opening /var/db/heards.txt");
++	}
++	SLIST_FOREACH(idp, &iclc_idents, entries) {
++		fprintf(hh, "%02x:%02x:%02x:%02x:%02x:%02x\t%s\n",
++		    idp->hwaddr.ether_addr_octet[0],
++		    idp->hwaddr.ether_addr_octet[1],
++		    idp->hwaddr.ether_addr_octet[2],
++		    idp->hwaddr.ether_addr_octet[3],
++		    idp->hwaddr.ether_addr_octet[4],
++		    idp->hwaddr.ether_addr_octet[5],
++		    idp->call);
++	}
++	fclose(hh);
++}
++
++
++void
++iclc_process(u_char* buf)
++{
++	// TODO: deduplicate packets
++	// TODO: record a timestamp
++	struct ether_header *ep = (struct ether_header *)buf;
++	struct iclc_ident *idp = malloc(sizeof(struct iclc_ident));
++	syslog(LOG_DAEMON | LOG_INFO, "got callsign: %s from mac: %02x:%02x:%02x:%02x:%02x:%02x",
++	    (char *)(&buf[16]),
++	    buf[6],
++	    buf[7],
++	    buf[8],
++	    buf[9],
++	    buf[10],
++	    buf[11]);
++	memcpy(&idp->hwaddr, ep->ether_shost, 6);
++	strlcpy(idp->call, &buf[16], 40);
++	SLIST_INSERT_HEAD(&iclc_idents, idp, entries);
++	iclc_write();
++}
++
 +int
 +main(int argc, char **argv)
 +{
 +	int bpf, daemon, period;
-+	char ch, *interface;
++	char ch, *device;
 +
 +	/* option defaults */
 +	daemon = 1;
 +	period = 60;
-+	interface = "ekiss0"; // default
++	device = "ekiss0"; // default
 +
 +	while ((ch = getopt(argc, argv, "i:p:D")) != -1) {
 +		switch (ch) {
 +		case 'i':
-+			interface = optarg;
++			device = optarg;
 +			break;
 +		case 'p':
 +			period = atoi(optarg);
@@ -261,6 +381,8 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	argc -= optind;
 +	argv += optind;
 +
++	char *call = mycallsign();
++
 +	/* Check for root privileges. */
 +	if (geteuid())
 +		fatal("need root privileges");
@@ -268,26 +390,43 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	if (daemon)
 +		daemonize();
 +
-+	if ((bpf = openbpf(interface)) == -1)
-+		fatal("failed to open bpf interface");
++	/* This will not return if it fails. */
++	bpf = iclc_open(device);
 +
-+	char framebuf[41]; // extra byte for a terminating NUL, not txd
-+	char *call = mycallsign();
-+	int framelen = composeframe(framebuf, call);
-+	int unslept;
++	struct iclc_beacon_attrs *beacon_attrs = malloc(sizeof(struct iclc_beacon_attrs));
++	beacon_attrs->call = call;
++	beacon_attrs->device = device;
++	beacon_attrs->bpf = bpf;
++	beacon_attrs->period = period;
 +
-+	syslog(LOG_DAEMON | LOG_INFO,
-+	    "started up (interface %s, callsign: %s)", interface, call);
++	pthread_t beacon_thread;
++	pthread_create(&beacon_thread, NULL, iclc_beacon_loop, beacon_attrs);
++
++	int rbufsize, cc;
++	u_char *rbuf, *bp, *ep;
++
++	/* Get buffer size needed for reads */
++	if (ioctl(bpf, BIOCGBLEN, (caddr_t)&rbufsize) == -1)
++		fatal("failed to get buffer size for bpf reads");
++	rbuf = malloc(rbufsize);
++	SLIST_INIT(&iclc_idents);
 +
 +	for (;;) {
-+		if (write(bpf, &framebuf, framelen) != framelen) {
-+			syslog(LOG_DAEMON | LOG_EMERG,
-+			    "failed to send ident frame, might want to unplug");
-+			syslog(LOG_DAEMON | LOG_ERR,
-+			    "failure reason: %m");
++		cc = read(bpf, rbuf, rbufsize);
++		if (cc == -1 && errno == EINTR)
++			continue;
++		if (cc == -1)
++			fatal("read error");
++		bp = rbuf;
++		ep = bp + cc;
++		while (bp < ep) {
++#define caplen ((struct bpf_hdr *)bp)->bh_caplen
++#define hdrlen ((struct bpf_hdr *)bp)->bh_hdrlen
++			iclc_process(bp + hdrlen);
++			bp += BPF_WORDALIGN(hdrlen + caplen);
 +		}
-+		unslept = period;
-+		while (unslept > 0)
-+			unslept = sleep(unslept);
 +	}
++
++	/* TODO: unreachable code, needs to go in signal handler? */
++	return pthread_join(beacon_thread, NULL);
 +}
