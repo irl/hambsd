@@ -22,7 +22,7 @@ Index: src/distrib/sets/lists/man/mi
 ===================================================================
 --- src.orig/distrib/sets/lists/man/mi
 +++ src/distrib/sets/lists/man/mi
-@@ -2322,6 +2322,7 @@
+@@ -2327,6 +2327,7 @@
  ./usr/share/man/man8/i386/memconfig.8
  ./usr/share/man/man8/i386/pxeboot.8
  ./usr/share/man/man8/i386/wsmoused.8
