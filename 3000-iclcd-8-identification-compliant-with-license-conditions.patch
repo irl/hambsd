@@ -79,7 +79,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.c
-@@ -0,0 +1,397 @@
+@@ -0,0 +1,399 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
 + *
@@ -96,8 +96,9 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +#include <signal.h>
 +#include <pthread.h>
 +#include <errno.h>
-+#include <sys/queue.h>
++#include <time.h>
 +
++#include <sys/queue.h>
 +#include <sys/times.h>
 +#include <sys/time.h>
 +#include <sys/ioctl.h>
@@ -323,7 +324,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +{
 +	char source_addr[18];
 +	format_mac(source_addr, &idp->hwaddr);
-+	if (fprintf(hh, "%s\t%s\n", source_addr, idp->call) != 0) {
++	if (fprintf(hh, "%s\t%s\t%d\t%lld\t%lld\n", source_addr, idp->call, idp->flags, idp->first_heard, idp->last_heard) != 0) {
 +		/* TODO: log an error message */
 +	}
 +}
@@ -331,8 +332,6 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +static void
 +iclc_update(u_char *buf)
 +{
-+	/* TODO: use a binary format instead (and write a tool that can query it) */
-+	/* TODO: record a timestamp */
 +	struct ether_header *ep;
 +	struct iclc_ident *idp;
 +	FILE *hh;
@@ -354,6 +353,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	SLIST_FOREACH(idp, &iclc_idents, entries) {
 +		if (!updated && memcmp(&idp->hwaddr, &ep->ether_shost, 6) == 0) {
 +			strlcpy(idp->call, &buf[16], 40);
++			idp->last_heard = time(NULL);
 +			updated = 1;
 +		}
 +		iclc_write_text_entry(hh, idp);
@@ -364,6 +364,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +		idp = malloc(sizeof(struct iclc_ident));
 +		memcpy(&idp->hwaddr, ep->ether_shost, 6);
 +		strlcpy(idp->call, &buf[16], 40);
++		idp->first_heard = idp->last_heard = time(NULL);
 +		SLIST_INSERT_HEAD(&iclc_idents, idp, entries);
 +		iclc_write_text_entry(hh, idp);
 +	}
@@ -377,7 +378,8 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +static int
 +iclc_verify(u_char *buf)
 +{
-+	/* TODO: check version */
++	if (buf[0] != 0)
++		return 0;
 +	/* TODO: check chars are printable */
 +	return 1;
 +}
@@ -481,11 +483,16 @@ Index: src/usr.sbin/iclcd/iclc.h
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclc.h
-@@ -0,0 +1,8 @@
+@@ -0,0 +1,13 @@
++
++#define ICLC_IDENT_QRT 1
 +
 +struct iclc_ident {
 +	char			call[40]; // TODO: magic numbers are bad
 +	struct ether_addr	hwaddr;
++	time_t			first_heard;
++	time_t			last_heard;
++	int			flags;
 +	SLIST_ENTRY(iclc_ident)	entries;
 +};
 +SLIST_HEAD(iclc_idents_list, iclc_ident) iclc_idents;
