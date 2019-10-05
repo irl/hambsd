@@ -79,7 +79,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.c
-@@ -0,0 +1,350 @@
+@@ -0,0 +1,397 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
 + *
@@ -107,6 +107,29 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +#include <netinet/in.h>
 +#include <netinet/if_ether.h>
 +
++#include "iclc.h"
++
++static __dead void	 fatal(char *);
++static __dead void	 usage(void);
++static void		 signal_handler(int sig);
++static char		*read_mycallsign(void);
++static int		 iclc_compose(char *, char *);
++static int		 iclc_open(char *);
++static void		 daemonize();
++static void		 format_mac();
++static void		 iclc_write_text_entry(FILE *, struct iclc_ident *);
++static void		 iclc_update(u_char *);
++static int		 iclc_verify(u_char *);
++static void		 iclc_listen_loop(int, int);
++static void		*iclc_beacon_loop(void *);
++
++struct iclc_beacon_attrs {
++	char	*call;   /* callsign as ascii text */
++	char	*device; /* interface name */
++	int	 bpf;    /* bpf file handle */
++	int	 period; /* beacon period */
++};
++
 +static struct bpf_insn insns[] = {
 +	/* Check EtherType */
 +	BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),
@@ -123,7 +146,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	insns
 +};
 +
-+__dead void
++static __dead void
 +fatal(char* msg)
 +{
 +	syslog(LOG_DAEMON | LOG_EMERG,
@@ -133,7 +156,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	exit(1);
 +}
 +
-+__dead void
++static __dead void
 +usage(void)
 +{
 +	extern char *__progname;
@@ -143,7 +166,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	exit(1);
 +}
 +
-+void
++static void
 +signal_handler(int sig)
 +{
 +	switch(sig) {
@@ -158,8 +181,8 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	}
 +}
 +
-+char *
-+mycallsign()
++static char *
++read_mycallsign(void)
 +{
 +	FILE    *mcp;
 +	char    *call, *nl;
@@ -179,7 +202,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +}
 +
 +int
-+composeframe(char *buf, char *call)
++iclc_compose(char *buf, char *call)
 +{
 +	int framelen, calllen;
 +
@@ -242,25 +265,11 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	return bpf;
 +}
 +
-+void
++static void
 +daemonize()
 +{
 +	int i;
-+	// TODO: should this use daemon(3) instead? maybe it cuts this down
-+	if (getppid() == 1)
-+		return; /* already a daemon */
-+	i = fork();
-+	if (i<0)
-+		exit(1); /* fork error */
-+	if (i>0)
-+		exit(0); /* parent exits */
-+	/* child (daemon) continues */
-+	setsid(); /* obtain a new process group */
-+	for (i = getdtablesize(); i >= 0; --i)
-+		close(i); /* close all descriptors */
-+	i = open("/dev/null", O_RDWR);
-+	dup(i);
-+	dup(i); /* handle standard I/O */
++	i = daemon(0, 0);
 +	signal(SIGCHLD, SIG_IGN); /* ignore child */
 +	signal(SIGTSTP, SIG_IGN); /* ignore tty signals */
 +	signal(SIGTTOU, SIG_IGN);
@@ -269,19 +278,12 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	signal(SIGTERM, signal_handler); /* catch kill signal */
 +}
 +
-+struct iclc_beacon_attrs {
-+	char	*call;   /* callsign as ascii text */
-+	char	*device; /* interface name */
-+	int	 bpf;    /* bpf file handle */
-+	int	 period; /* beacon period */
-+};
-+
-+void *
-+iclc_beacon_loop(void *arguments) {
-+	// TODO: make beaconing optional, we want this in the kernel
++static void *
++iclc_beacon_loop(void *arguments)
++{
 +	struct iclc_beacon_attrs *attrs = (struct iclc_beacon_attrs *)arguments;
 +	char framebuf[41]; // extra byte for a terminating NUL, not txd
-+	int framelen = composeframe(framebuf, attrs->call);
++	int framelen = iclc_compose(framebuf, attrs->call);
 +	int unslept;
 +
 +	syslog(LOG_DAEMON | LOG_INFO,
@@ -300,114 +302,92 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	}
 +}
 +
-+struct iclc_ident {
-+	char			call[40]; // TODO: magic numbers are bad
-+	struct ether_addr	hwaddr;
-+	SLIST_ENTRY(iclc_ident)	entries;
-+};
-+SLIST_HEAD(iclc_idents_list, iclc_ident) iclc_idents;
-+
-+void
-+iclc_write()
++/*
++ * Formats a MAC address as a colon-seperated lowercase hex string.
++ * Callers must ensure the buffer is at least 18 bytes in size.
++ */
++static void
++format_mac(char *buf, struct ether_addr *eap)
 +{
-+	// TODO: use a binary format instead (and write a tool that can query it)
++	sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x",
++	    eap->ether_addr_octet[0],
++	    eap->ether_addr_octet[1],
++	    eap->ether_addr_octet[2],
++	    eap->ether_addr_octet[3],
++	    eap->ether_addr_octet[4],
++	    eap->ether_addr_octet[5]);
++}
++
++static void
++iclc_write_text_entry(FILE* hh, struct iclc_ident *idp)
++{
++	char source_addr[18];
++	format_mac(source_addr, &idp->hwaddr);
++	if (fprintf(hh, "%s\t%s\n", source_addr, idp->call) != 0) {
++		/* TODO: log an error message */
++	}
++}
++
++static void
++iclc_update(u_char *buf)
++{
++	/* TODO: use a binary format instead (and write a tool that can query it) */
++	/* TODO: record a timestamp */
++	struct ether_header *ep;
 +	struct iclc_ident *idp;
-+	FILE *hh = fopen("/var/db/heards.txt", "w");
++	FILE *hh;
++	char source_addr[18];
++	int updated = 0;
++
++	ep = (struct ether_header *)buf;
++	format_mac(source_addr, (struct ether_addr *)ep->ether_shost);
++
++	syslog(LOG_DAEMON | LOG_INFO, "updated callsign: %s from mac: %s",
++	    (char *)(&buf[16]),
++	    source_addr);
++
++	hh = fopen("/var/db/heards.txt", "w");
 +	if (hh == NULL) {
 +		fatal("error opening /var/db/heards.txt");
 +	}
++
 +	SLIST_FOREACH(idp, &iclc_idents, entries) {
-+		fprintf(hh, "%02x:%02x:%02x:%02x:%02x:%02x\t%s\n",
-+		    idp->hwaddr.ether_addr_octet[0],
-+		    idp->hwaddr.ether_addr_octet[1],
-+		    idp->hwaddr.ether_addr_octet[2],
-+		    idp->hwaddr.ether_addr_octet[3],
-+		    idp->hwaddr.ether_addr_octet[4],
-+		    idp->hwaddr.ether_addr_octet[5],
-+		    idp->call);
++		if (!updated && memcmp(&idp->hwaddr, &ep->ether_shost, 6) == 0) {
++			strlcpy(idp->call, &buf[16], 40);
++			updated = 1;
++		}
++		iclc_write_text_entry(hh, idp);
 +	}
++
++	if (!updated) {
++		/* this one is new */
++		idp = malloc(sizeof(struct iclc_ident));
++		memcpy(&idp->hwaddr, ep->ether_shost, 6);
++		strlcpy(idp->call, &buf[16], 40);
++		SLIST_INSERT_HEAD(&iclc_idents, idp, entries);
++		iclc_write_text_entry(hh, idp);
++	}
++
 +	fclose(hh);
 +}
 +
-+
-+void
-+iclc_process(u_char* buf)
++/*
++ * Verifies a packet looks sane and isn't going to be a trouble maker.
++ */
++static int
++iclc_verify(u_char *buf)
 +{
-+	// TODO: deduplicate packets
-+	// TODO: record a timestamp
-+	struct ether_header *ep = (struct ether_header *)buf;
-+	struct iclc_ident *idp = malloc(sizeof(struct iclc_ident));
-+	syslog(LOG_DAEMON | LOG_INFO, "got callsign: %s from mac: %02x:%02x:%02x:%02x:%02x:%02x",
-+	    (char *)(&buf[16]),
-+	    buf[6],
-+	    buf[7],
-+	    buf[8],
-+	    buf[9],
-+	    buf[10],
-+	    buf[11]);
-+	memcpy(&idp->hwaddr, ep->ether_shost, 6);
-+	strlcpy(idp->call, &buf[16], 40);
-+	SLIST_INSERT_HEAD(&iclc_idents, idp, entries);
-+	iclc_write();
++	/* TODO: check version */
++	/* TODO: check chars are printable */
++	return 1;
 +}
 +
-+int
-+main(int argc, char **argv)
++static void
++iclc_listen_loop(int bpf, int rbufsize)
 +{
-+	int bpf, daemon, period;
-+	char ch, *device;
-+
-+	/* option defaults */
-+	daemon = 1;
-+	period = 60;
-+	device = "ekiss0"; // default
-+
-+	while ((ch = getopt(argc, argv, "i:p:D")) != -1) {
-+		switch (ch) {
-+		case 'i':
-+			device = optarg;
-+			break;
-+		case 'p':
-+			period = atoi(optarg);
-+			break;
-+		case 'D':
-+			daemon = 0;
-+			break;
-+		default:
-+			usage();
-+			break;
-+		}
-+	}
-+	argc -= optind;
-+	argv += optind;
-+
-+	char *call = mycallsign();
-+
-+	/* Check for root privileges. */
-+	if (geteuid())
-+		fatal("need root privileges");
-+
-+	if (daemon)
-+		daemonize();
-+
-+	/* This will not return if it fails. */
-+	bpf = iclc_open(device);
-+
-+	struct iclc_beacon_attrs *beacon_attrs = malloc(sizeof(struct iclc_beacon_attrs));
-+	beacon_attrs->call = call;
-+	beacon_attrs->device = device;
-+	beacon_attrs->bpf = bpf;
-+	beacon_attrs->period = period;
-+
-+	pthread_t beacon_thread;
-+	pthread_create(&beacon_thread, NULL, iclc_beacon_loop, beacon_attrs);
-+
-+	int rbufsize, cc;
++	int cc;
 +	u_char *rbuf, *bp, *ep;
 +
-+	/* Get buffer size needed for reads */
-+	if (ioctl(bpf, BIOCGBLEN, (caddr_t)&rbufsize) == -1)
-+		fatal("failed to get buffer size for bpf reads");
 +	rbuf = malloc(rbufsize);
 +	SLIST_INIT(&iclc_idents);
 +
@@ -422,11 +402,91 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +		while (bp < ep) {
 +#define caplen ((struct bpf_hdr *)bp)->bh_caplen
 +#define hdrlen ((struct bpf_hdr *)bp)->bh_hdrlen
-+			iclc_process(bp + hdrlen);
++			if (iclc_verify(bp+hdrlen))
++				iclc_update(bp + hdrlen);
 +			bp += BPF_WORDALIGN(hdrlen + caplen);
 +		}
 +	}
++}
++
++int
++main(int argc, char **argv)
++{
++	int beacon, bpf, daemon, rbufsize, period;
++	char ch, *device;
++
++	/* option defaults */
++	beacon = 1;
++	daemon = 1;
++	period = 60;
++	device = "ekiss0";
++
++	while ((ch = getopt(argc, argv, "i:p:Dn")) != -1) {
++		switch (ch) {
++		case 'i':
++			device = optarg;
++			break;
++		case 'p':
++			period = atoi(optarg);
++			break;
++		case 'D':
++			daemon = 0;
++			break;
++		case 'n':
++			beacon = 0;
++			break;
++		default:
++			usage();
++			break;
++		}
++	}
++	argc -= optind;
++	argv += optind;
++
++	char *call = read_mycallsign();
++
++	/* Check for root privileges. */
++	if (geteuid())
++		fatal("need root privileges");
++
++	if (daemon)
++		daemonize();
++
++	/* This will not return if it fails. */
++	bpf = iclc_open(device);
++
++	/* Get buffer size needed for reads */
++	if (ioctl(bpf, BIOCGBLEN, (caddr_t)&rbufsize) == -1)
++		fatal("failed to get buffer size for bpf reads");
++
++	unveil("/var/db/heards.txt", "cw");
++	pledge("stdio cpath wpath", NULL);
++
++	pthread_t beacon_thread;
++	if (beacon) {
++		struct iclc_beacon_attrs *beacon_attrs = malloc(sizeof(struct iclc_beacon_attrs));
++		beacon_attrs->call = call;
++		beacon_attrs->device = device;
++		beacon_attrs->bpf = bpf;
++		beacon_attrs->period = period;
++		pthread_create(&beacon_thread, NULL, iclc_beacon_loop, beacon_attrs);
++	}
++
++	iclc_listen_loop(bpf, rbufsize); /* blocks forever */
 +
 +	/* TODO: unreachable code, needs to go in signal handler? */
 +	return pthread_join(beacon_thread, NULL);
 +}
+Index: src/usr.sbin/iclcd/iclc.h
+===================================================================
+--- /dev/null
++++ src/usr.sbin/iclcd/iclc.h
+@@ -0,0 +1,8 @@
++
++struct iclc_ident {
++	char			call[40]; // TODO: magic numbers are bad
++	struct ether_addr	hwaddr;
++	SLIST_ENTRY(iclc_ident)	entries;
++};
++SLIST_HEAD(iclc_idents_list, iclc_ident) iclc_idents;
++
