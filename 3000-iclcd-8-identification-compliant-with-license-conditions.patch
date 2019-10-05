@@ -79,7 +79,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.c
-@@ -0,0 +1,399 @@
+@@ -0,0 +1,403 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
 + *
@@ -329,6 +329,10 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	}
 +}
 +
++/*
++ * Update the heard stations with data from received frame. This updates
++ * internal state and also the /var/db/heards.txt file.
++ */
 +static void
 +iclc_update(u_char *buf)
 +{
@@ -378,7 +382,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +static int
 +iclc_verify(u_char *buf)
 +{
-+	if (buf[0] != 0)
++	if (buf[15] != 0) /* TODO: double check this offset */
 +		return 0;
 +	/* TODO: check chars are printable */
 +	return 1;
