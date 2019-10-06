@@ -352,7 +352,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	format_mac(source_addr, &idp->hwaddr);
 +	if (fprintf(hh, "%s\t%s\t%d\t%lld\t%lld\n",
 +	    source_addr,idp->call, idp->flags, idp->first_heard,
-+	    idp->last_heard) != 0) {
++	    idp->last_heard) < 0) {
 +		fatal("failed to write an entry to the heard stations file");
 +	}
 +}
