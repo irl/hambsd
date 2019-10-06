@@ -79,11 +79,22 @@ Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.c
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,458 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
 + *
 + * Written by Iain R. Learmonth <irl@fsfe.org> for the public domain.
++ */
++
++/*
++ * TODO:
++ *
++ *  * a non-privileged utility to read the heard stations file
++ *  * don't use threads, split up into two processes instead and
++ *    have specific pledges
++ *  * helper functions for logging errors, warnings, with format
++ *    strings
++ *  * store flags as they are received
 + */
 +
 +#include <stdio.h>
@@ -202,27 +213,40 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	fatal("could not read callsign from /etc/mycallsign");
 +}
 +
++/*
++ * Composes an Ethernet frame in "buf" to beacon the
++ * station identification using the callsign in "call"
++ * according to version 0 identification frames of the
++ * hamdex(7) protocol. buf must be at least 60 bytes in
++ * size. The length of the composed frame is returned.
++ */
 +int
 +iclc_compose(char *buf, char *call)
 +{
-+	int framelen, calllen;
++	struct iclc_ident_frame_hdr *frp;
 +
-+	const char header[] = {
-+	  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // broadcast destination
-+	  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // source filled by bpf
-+	  0x88, 0xB5,                         // ethertype
-+	  0x00,                               // subtype
-+	  0x00                                // version
++	const char hdr[] = {
++	  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // broadcast destination (6 bytes)
++	  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // source filled by bpf (6 bytes)
++	  0x88, 0xB5,                         // ethertype (2 bytes)
++	  0x00,                               // subtype (1 byte)
++	  0x00,                               // version (1 byte)
++	  0x00,                               // flags (1 byte)
++	  0x00,                               // callsign length (1 byte)
 +	};
 +
-+	memcpy(buf, header, 16);
-+	framelen = 16; // prefix is 15 bytes
-+	calllen = strlcpy(&buf[16], call, 25);
-+	if (calllen > 24) {
++	/* copy header to buf */
++	memcpy(buf, hdr, sizeof(hdr));
++
++	/* copy callsign to buf */
++	frp = (struct iclc_ident_frame_hdr *)buf;
++	frp->fr_calllen = strlen(call);
++	if (frp->fr_calllen > ICLC_MAXCALL) {
 +		fatal("callsign in /etc/mycallsign too long");
 +	}
-+	framelen = framelen + calllen;
-+	return framelen;
++	memcpy(&frp->fr_call, call, frp->fr_calllen);
++
++	return sizeof(hdr) + frp->fr_calllen;
 +}
 +
 +/*
@@ -283,9 +307,11 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +iclc_beacon_loop(void *arguments)
 +{
 +	struct iclc_beacon_attrs *attrs = (struct iclc_beacon_attrs *)arguments;
-+	char framebuf[41]; // extra byte for a terminating NUL, not txd
-+	int framelen = iclc_compose(framebuf, attrs->call);
++	char framebuf[sizeof(struct iclc_ident_frame_hdr) + ICLC_MAXCALL];
++	int framelen;
 +	int unslept;
++
++	framelen = iclc_compose(framebuf, attrs->call);
 +
 +	syslog(LOG_DAEMON | LOG_INFO,
 +	    "started up beacon thread (interface %s, callsign: %s)", attrs->device, attrs->call);
@@ -324,8 +350,10 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +{
 +	char source_addr[18];
 +	format_mac(source_addr, &idp->hwaddr);
-+	if (fprintf(hh, "%s\t%s\t%d\t%lld\t%lld\n", source_addr, idp->call, idp->flags, idp->first_heard, idp->last_heard) != 0) {
-+		/* TODO: log an error message */
++	if (fprintf(hh, "%s\t%s\t%d\t%lld\t%lld\n",
++	    source_addr,idp->call, idp->flags, idp->first_heard,
++	    idp->last_heard) != 0) {
++		fatal("failed to write an entry to the heard stations file");
 +	}
 +}
 +
@@ -336,14 +364,14 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +static void
 +iclc_update(u_char *buf)
 +{
-+	struct ether_header *ep;
++	struct iclc_ident_frame_hdr *frp;
 +	struct iclc_ident *idp;
 +	FILE *hh;
 +	char source_addr[18];
 +	int updated = 0;
 +
-+	ep = (struct ether_header *)buf;
-+	format_mac(source_addr, (struct ether_addr *)ep->ether_shost);
++	frp = (struct iclc_ident_frame_hdr *)buf;
++	format_mac(source_addr, &frp->fr_shost);
 +
 +	syslog(LOG_DAEMON | LOG_INFO, "updated callsign: %s from mac: %s",
 +	    (char *)(&buf[16]),
@@ -355,8 +383,8 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	}
 +
 +	SLIST_FOREACH(idp, &iclc_idents, entries) {
-+		if (!updated && memcmp(&idp->hwaddr, &ep->ether_shost, 6) == 0) {
-+			strlcpy(idp->call, &buf[16], 40);
++		if (!updated && memcmp(&idp->hwaddr, &frp->fr_shost, 6) == 0) {
++			memcpy(idp->call, &frp->fr_call, frp->fr_calllen);
 +			idp->last_heard = time(NULL);
 +			updated = 1;
 +		}
@@ -366,8 +394,8 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	if (!updated) {
 +		/* this one is new */
 +		idp = malloc(sizeof(struct iclc_ident));
-+		memcpy(&idp->hwaddr, ep->ether_shost, 6);
-+		strlcpy(idp->call, &buf[16], 40);
++		memcpy(&idp->hwaddr, &frp->fr_shost, 6);
++		memcpy(&idp->call, &frp->fr_call, frp->fr_calllen);
 +		idp->first_heard = idp->last_heard = time(NULL);
 +		SLIST_INSERT_HEAD(&iclc_idents, idp, entries);
 +		iclc_write_text_entry(hh, idp);
@@ -378,13 +406,40 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +
 +/*
 + * Verifies a packet looks sane and isn't going to be a trouble maker.
++ * It is assumed that the packet has already had the EtherType and
++ * HAMDEX SubType checked (probably by BPF filter). It is also assumed
++ * that buf is at least 60 bytes in size.
 + */
 +static int
 +iclc_verify(u_char *buf)
 +{
-+	if (buf[15] != 0) /* TODO: double check this offset */
++	int i;
++	struct iclc_ident_frame_hdr *frp;
++	frp = (struct iclc_ident_frame_hdr *)buf;
++
++	/* check version */
++	if (frp->fr_version != 0) {
++		syslog(LOG_DAEMON | LOG_WARNING,
++		    "rejecting a frame for unknown protocol version");
 +		return 0;
-+	/* TODO: check chars are printable */
++	}
++
++	/* check callsign length */
++	if (frp->fr_calllen == 0 || frp->fr_calllen > ICLC_MAXCALL) {
++		syslog(LOG_DAEMON | LOG_WARNING,
++		    "rejecting a frame for invalid callsign length");
++		return 0;
++	}
++
++	/* check chars are printable */
++	for (i = 18; i < 18 + frp->fr_calllen; i++) {
++		if (buf[i] < 0x20 || buf[i] > 0xfe) {
++			syslog(LOG_DAEMON | LOG_WARNING,
++			    "rejecting a frame for non-printable characters");
++			return 0;
++		}
++	}
++
 +	return 1;
 +}
 +
@@ -480,19 +535,32 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +
 +	iclc_listen_loop(bpf, rbufsize); /* blocks forever */
 +
-+	/* TODO: unreachable code, needs to go in signal handler? */
++	/* XXX: unreachable code, needs to go in signal handler? */
 +	return pthread_join(beacon_thread, NULL);
 +}
 Index: src/usr.sbin/iclcd/iclc.h
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclc.h
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,26 @@
 +
 +#define ICLC_IDENT_QRT 1
 +
++#define ICLC_MAXCALL 42
++
++struct iclc_ident_frame_hdr {
++	struct ether_addr	fr_dhost;
++	struct ether_addr	fr_shost;
++	u_int16_t		fr_et;
++	u_int8_t		fr_subtype;
++	u_int8_t		fr_version;
++	u_int8_t		fr_flags;
++	u_int8_t		fr_calllen;
++	u_int8_t		fr_call[ICLC_MAXCALL];
++};
++
 +struct iclc_ident {
-+	char			call[40]; // TODO: magic numbers are bad
++	char			call[ICLC_MAXCALL];
 +	struct ether_addr	hwaddr;
 +	time_t			first_heard;
 +	time_t			last_heard;
