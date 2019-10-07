@@ -9,7 +9,7 @@ Index: src/usr.sbin/iclcd/Makefile
 +
 +PROG=	iclcd
 +SRCS=	iclcd.c
-+MAN=	iclcd.8
++MAN=	heard.5 iclcd.8
 +
 +LDADD=  -lpthread
 +
@@ -18,8 +18,8 @@ Index: src/usr.sbin/iclcd/iclcd.8
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/iclcd/iclcd.8
-@@ -0,0 +1,56 @@
-+.Dd September 7 2019
+@@ -0,0 +1,81 @@
++.Dd October 7, 2019
 +.Dt ICLCD 8
 +.Os
 +.Sh NAME
@@ -27,16 +27,25 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +.Nd identification compliant with license conditions daemon
 +.Sh SYNOPSIS
 +.Nm
-+.Op Fl D
++.Op Fl Dn
 +.Op Fl i Ar interface
 +.Op Fl p Ar period
 +.Sh DESCRIPTION
 +.Nm
 +sends
 +.Em hamdex
-+identification frames using the contents of
-+.Pa /etc/mycallsign
-+up to either the first newline or to the end of the file.
++identification frames using the system default callsign, see
++.Xr mycallsign 5 .
++It will also listen for identification frames on the specified
++interface and record information heard in the
++.Xr heard 5
++database.
++.Pp
++In normal operation,
++.Nm
++forks a copy of itself and runs in the background.
++Anomolies and errors are reported via
++.Xr syslog 3 .
 +.Pp
 +.Nm
 +is usually started at boot time, and can be enabled by
@@ -51,30 +60,46 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +.Xr rc.conf 8
 +for more information on the boot process
 +and enabling daemons.
-+.Sh OPTIONS
++.Pp
++The options are as follows:
 +.Bl -tag -width Ds
 +.It Fl D
 +Do not daemonize.
++.It Fl n
++Do not send beacons, only listen.
 +.It Fl i Ar interface
 +Interface name to broadcast ident frames (default: ekiss0).
 +.It Fl p Ar period
 +Period in seconds between broadcasts (default: 60).
-+.Sh DISCLAIMER
-+This may not be enough to comply with your local laws regarding identification
-+of amateur radio transmissions. This manual page is not legal advice.
-+.Sh CAVEATS
-+It is not currently possible to broadcast identification on multiple interfaces
-+with a single instance. It is however possible to manually start multiple
-+instances.
++.El
++.Sh FILES
++.Bl -tag -width /etc/mycallsign -compact
++.It Pa /etc/mycallsign
++System default callsign
++.It Pa /var/db/heard
++Heard stations database
++.El
 +.Sh SEE ALSO
-+.Xr hamdex 7 ,
++.Xr heard 1 ,
++.Xr ekiss 4 ,
++.Xr heard 5 ,
 +.Xr mycallsign 5 ,
-+.Xr kiss 4
++.Xr hamdex 7
 +.Sh AUTHORS
 +The
 +.Nm
-+daemon was written for the HamBSD project by Iain R. Learmonth for the public
-+domain.
++daemon was written for the HamBSD project by
++.An Iain R. Learmonth Aq Mt irl@fsfe.org
++for the public domain.
++.Sh CAVEATS
++It is not currently possible to broadcast identification on multiple interfaces,
++or listen for broadcasts on multiple interfaces.
++It is also required that identification transmit and receive must be on the
++same interface.
++.Sh DISCLAIMER
++This may not be enough to comply with your local laws regarding identification
++of amateur radio transmissions.
++This manual page is not legal advice.
 Index: src/usr.sbin/iclcd/iclcd.c
 ===================================================================
 --- /dev/null
@@ -173,7 +198,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +{
 +	extern char *__progname;
 +
-+	fprintf(stderr, "usage: %s [-D] [-i interface] [-p period]\n",
++	fprintf(stderr, "usage: %s [-Dn] [-i interface] [-p period]\n",
 +	    __progname);
 +	exit(1);
 +}
@@ -569,3 +594,176 @@ Index: src/usr.sbin/iclcd/iclc.h
 +};
 +SLIST_HEAD(iclc_idents_list, iclc_ident) iclc_idents;
 +
+Index: src/etc/rc.d/iclcd
+===================================================================
+--- /dev/null
++++ src/etc/rc.d/iclcd
+@@ -0,0 +1,11 @@
++#!/bin/ksh
++#
++# $OpenBSD$
++
++daemon="/usr/sbin/iclcd"
++
++. /etc/rc.d/rc.subr
++
++rc_reload=NO
++
++rc_cmd $1
+Index: src/etc/rc
+===================================================================
+--- src.orig/etc/rc
++++ src/etc/rc
+@@ -584,7 +584,7 @@ start_daemon ldomd sshd switchd snmpd ld
+ start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
+ start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
+ start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
+-start_daemon rbootd mopd vmd spamd spamlogd sndiod
++start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
+ echo '.'
+ 
+ # If rc.firsttime exists, run it just once, and make sure it is deleted.
+Index: src/etc/rc.conf
+===================================================================
+--- src.orig/etc/rc.conf
++++ src/etc/rc.conf
+@@ -27,6 +27,7 @@ ftpproxy6_flags=NO
+ hostapd_flags=NO
+ hotplugd_flags=NO
+ httpd_flags=NO
++iclcd_flags=NO
+ identd_flags=NO
+ ifstated_flags=NO
+ iked_flags=NO
+Index: src/etc/Makefile
+===================================================================
+--- src.orig/etc/Makefile
++++ src/etc/Makefile
+@@ -58,7 +58,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.
+ 
+ # -r-xr-xr-x
+ RCDAEMONS=amd apmd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
+-	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd identd ifstated \
++	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd iclcd identd ifstated \
+ 	iked inetd isakmpd iscsid ldapd ldattach ldomd ldpd lockd \
+ 	lpd mopd mountd mrouted nfsd npppd nsd ntpd ospf6d ospfd \
+ 	pflogd portmap rad radiusd rarpd rbootd rebound relayd ripd route6d \
+Index: src/usr.sbin/Makefile
+===================================================================
+--- src.orig/usr.sbin/Makefile
++++ src/usr.sbin/Makefile
+@@ -5,7 +5,7 @@
+ SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp \
+ 	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
+ 	dhcpd dhcrelay dhcrelay6 dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
+-	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd identd \
++	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd iclcd identd \
+ 	ifstated ikectl inetd installboot iostat iscsictl iscsid kgmon \
+ 	kvm_mkdb ldapd ldapctl ldomctl ldomd ldpd ldpctl lpr makefs \
+ 	mailwrapper map-mbone memconfig mksuncd mkuboot mopd mrinfo \
+Index: src/distrib/sets/lists/base/mi
+===================================================================
+--- src.orig/distrib/sets/lists/base/mi
++++ src/distrib/sets/lists/base/mi
+@@ -154,6 +154,7 @@
+ ./etc/rc.d/hostapd
+ ./etc/rc.d/hotplugd
+ ./etc/rc.d/httpd
++./etc/rc.d/iclcd
+ ./etc/rc.d/identd
+ ./etc/rc.d/ifstated
+ ./etc/rc.d/iked
+@@ -2512,6 +2513,7 @@
+ ./usr/sbin/host
+ ./usr/sbin/hostapd
+ ./usr/sbin/httpd
++./usr/sbin/iclcd
+ ./usr/sbin/identd
+ ./usr/sbin/ifstated
+ ./usr/sbin/ikectl
+Index: src/distrib/sets/lists/man/mi
+===================================================================
+--- src.orig/distrib/sets/lists/man/mi
++++ src/distrib/sets/lists/man/mi
+@@ -2327,6 +2327,7 @@
+ ./usr/share/man/man8/i386/memconfig.8
+ ./usr/share/man/man8/i386/pxeboot.8
+ ./usr/share/man/man8/i386/wsmoused.8
++./usr/share/man/man8/iclcd.8
+ ./usr/share/man/man8/identd.8
+ ./usr/share/man/man8/ifconfig.8
+ ./usr/share/man/man8/ifstated.8
+Index: src/usr.sbin/iclcd/heard.5
+===================================================================
+--- /dev/null
++++ src/usr.sbin/iclcd/heard.5
+@@ -0,0 +1,69 @@
++.Dd October 7, 2019
++.Dt HEARD 5
++.Os
++.Sh NAME
++.Nm heard
++.Nd heard stations database
++.Sh DESCRIPTION
++The
++.Nm
++file maps Ethernet addresses to call signs.
++The format is intended to be somewhat human readable to allow for debugging
++however this format should never be written or edited by a human.
++It is expected that this file will be maintained by
++.Xr iclcd 8 .
++.Pp
++Lines consist of the following fields:
++.Bl -item -offset indent -compact
++.It
++Ethernet address
++.It
++Station callsign
++.It
++Flags
++.It
++First heard timestamp
++.It
++Last heard timestamp
++.El
++.Pp
++Fields are seperated by a horizontal tab character (hex value 0x09) and lines
++are seperated by a newline character (hex value 0x0a).
++.Ss Field Details
++.Bl -tag -width Ds
++.It Ethernet address
++Ethernet addresses are expressed as six hexadecimal numbers separated by
++colons.
++The functions described in
++.Xr ether_aton 3
++can read and produce this format.
++.It Station callsign
++The station callsign does not have a fixed format and is treated as an
++opaque
++.Xr ascii 5
++string.
++It will only consist of printable characters and must contain at least
++one character, but no guarantees are made beyond this.
++.It Flags
++The station flags are expressed as a decimal number.
++The flags are described in
++.Xr hamdex 7 .
++.It First heard timestamp
++The time that the station was first heard is expressed as a decimal
++number of seconds since 0 hours, 0 minutes, 0 seconds, January 1, 1970,
++Coordinated Universal Time (UTC).
++.It Last heard timestamp
++The time that the station was last heard, expressed as above.
++.El
++.Sh FILES
++.Bl -tag -width /var/db/heard -compact
++.It Pa /var/db/heard
++.El
++.Sh SEE ALSO
++.Xr heard 1 ,
++.Xr iclcd 8
++.Sh AUTHORS
++The
++.Nm
++daemon was written for the HamBSD project by
++.An Iain R. Learmonth Aq Mt irl@fsfe.org
