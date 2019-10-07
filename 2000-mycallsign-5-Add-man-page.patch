@@ -4,47 +4,62 @@ Index: src/share/man/man5/mycallsign.5
 ===================================================================
 --- /dev/null
 +++ src/share/man/man5/mycallsign.5
-@@ -0,0 +1,43 @@
-+.\"	$OpenBSD$
-+.\"
-+.\" Copyright (c) 2003 Jason McIntyre <jmc@openbsd.org>
-+.\" Copyright (c) 2019 Iain R. Learmonth <irl@fsfe.org>
-+.\"
-+.\" Permission to use, copy, modify, and distribute this software for any
-+.\" purpose with or without fee is hereby granted, provided that the above
-+.\" copyright notice and this permission notice appear in all copies.
-+.\"
-+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-+.\"
-+.Dd $Mdocdate: September 9 2019 $
+@@ -0,0 +1,33 @@
++.Dd October 7, 2019
 +.Dt MYCALLSIGN 5
 +.Os
 +.Sh NAME
 +.Nm mycallsign
-+.Nd default amateur radio callsign
++.Nd system default callsign
 +.Sh DESCRIPTION
 +The
 +.Nm mycallsign
-+file is read by
-+.Xr iclcd 8
-+when started.
++file is used as the system default callsign for radio applications, for example
++.Xr iclcd 8 .
 +.Pp
-+.Pa /etc/mycallsign
-+contains the callsign to be used for identification purposes according to the
-+conditions of your amateur radio license.
-+The file should contain a single line specifying the
-+prefix, callsign including any required regional locator, and suffix.
++For amateur radio usage, the file contains the callsign to be used for
++identification purposes according to the conditions of your amateur radio
++license.
++This this could include a prefix, core callsign, a regional locator, and
++suffix.
++.Pp
++If used for another purpose, the license requirements may be different or you
++may use tactical callsigns.
++.Pp
++The exact format of the callsign is not prescribed by the file format beyond
++that it must only contain printable
++.Xr ascii 7
++characters.
 +.Sh FILES
 +.Bl -tag -width "/etc/mycallsign" -compact
 +.It Pa /etc/mycallsign
-+Default amateur radio callsign
 +.El
 +.Sh SEE ALSO
-+.Xr iclcd 8 ,
-+.Xr kiss 4
++.Xr heard 1 ,
++.Xr heard 5 ,
++.Xr iclcd 8
+Index: src/share/man/man5/Makefile
+===================================================================
+--- src.orig/share/man/man5/Makefile
++++ src/share/man/man5/Makefile
+@@ -6,7 +6,7 @@ MAN=	acct.5 ar.5 bsd.port.mk.5 bsd.port.
+ 	defaultdomain.5 dir.5 disktab.5 elf.5 ethers.5 fbtab.5 files.conf.5 \
+ 	fs.5 fstab.5 genassym.cf.5 group.5 hostname.if.5 hosts.5 installurl.5 \
+ 	intro.5 login.conf.5 mandoc.db.5 mixerctl.conf.5 \
+-	mk.conf.5 moduli.5 motd.5 myname.5 netgroup.5 passwd.5 \
++	mk.conf.5 moduli.5 motd.5 mycallsign.5 myname.5 netgroup.5 passwd.5 \
+ 	pf.conf.5 pf.os.5 port-modules.5 printcap.5 protocols.5 \
+ 	ranlib.5 remote.5 resolv.conf.5 rpc.5 ruby-module.5 \
+ 	services.5 shells.5 \
+Index: src/distrib/sets/lists/man/mi
+===================================================================
+--- src.orig/distrib/sets/lists/man/mi
++++ src/distrib/sets/lists/man/mi
+@@ -2132,6 +2132,7 @@
+ ./usr/share/man/man5/mk.conf.5
+ ./usr/share/man/man5/moduli.5
+ ./usr/share/man/man5/motd.5
++./usr/share/man/man5/mycallsign.5
+ ./usr/share/man/man5/myname.5
+ ./usr/share/man/man5/netgroup.5
+ ./usr/share/man/man5/netid.5
