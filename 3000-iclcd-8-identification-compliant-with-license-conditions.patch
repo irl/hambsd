@@ -384,7 +384,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +
 +/*
 + * Update the heard stations with data from received frame. This updates
-+ * internal state and also the /var/db/heards.txt file.
++ * internal state and also the /var/db/heard file.
 + */
 +static void
 +iclc_update(u_char *buf)
@@ -402,9 +402,9 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	    (char *)(&buf[16]),
 +	    source_addr);
 +
-+	hh = fopen("/var/db/heards.txt", "w");
++	hh = fopen("/var/db/heard", "w");
 +	if (hh == NULL) {
-+		fatal("error opening /var/db/heards.txt");
++		fatal("error opening /var/db/heard");
 +	}
 +
 +	SLIST_FOREACH(idp, &iclc_idents, entries) {
@@ -545,7 +545,7 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	if (ioctl(bpf, BIOCGBLEN, (caddr_t)&rbufsize) == -1)
 +		fatal("failed to get buffer size for bpf reads");
 +
-+	unveil("/var/db/heards.txt", "cw");
++	unveil("/var/db/heard", "cw");
 +	pledge("stdio cpath wpath", NULL);
 +
 +	pthread_t beacon_thread;
