@@ -740,7 +740,7 @@ Index: src/usr.sbin/iclcd/heard.5
 +.It Station callsign
 +The station callsign does not have a fixed format and is treated as an
 +opaque
-+.Xr ascii 5
++.Xr ascii 7
 +string.
 +It will only consist of printable characters and must contain at least
 +one character, but no guarantees are made beyond this.
