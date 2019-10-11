@@ -554,3 +554,70 @@ Index: src/usr.sbin/aprsd/gps.h
 +};
 +
 +int gps_get_position(struct gps_position *, char *);
+Index: src/usr.sbin/Makefile
+===================================================================
+--- src.orig/usr.sbin/Makefile
++++ src/usr.sbin/Makefile
+@@ -2,7 +2,7 @@
+ 
+ .include <bsd.own.mk>
+ 
+-SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp \
++SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd aprsd arp \
+ 	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
+ 	dhcpd dhcrelay dhcrelay6 dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
+ 	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd iclcd identd \
+Index: src/etc/Makefile
+===================================================================
+--- src.orig/etc/Makefile
++++ src/etc/Makefile
+@@ -57,7 +57,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.
+ 	ripd.conf sasyncd.conf snmpd.conf vm.conf ypldap.conf
+ 
+ # -r-xr-xr-x
+-RCDAEMONS=amd apmd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
++RCDAEMONS=amd apmd aprsd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
+ 	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd iclcd identd ifstated \
+ 	iked inetd isakmpd iscsid ldapd ldattach ldomd ldpd lockd \
+ 	lpd mopd mountd mrouted nfsd npppd nsd ntpd ospf6d ospfd \
+Index: src/etc/rc
+===================================================================
+--- src.orig/etc/rc
++++ src/etc/rc
+@@ -584,7 +584,7 @@ start_daemon ldomd sshd switchd snmpd ld
+ start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
+ start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
+ start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
+-start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
++start_daemon rbootd mopd vmd spamd spamlogd sndiod aprsd iclcd
+ echo '.'
+ 
+ # If rc.firsttime exists, run it just once, and make sure it is deleted.
+Index: src/etc/rc.conf
+===================================================================
+--- src.orig/etc/rc.conf
++++ src/etc/rc.conf
+@@ -14,6 +14,7 @@
+ # Set them to "" to run them with the default flags.
+ # Otherwise, these variables override the default flags.
+ apmd_flags=NO
++aprsd_flags=NO
+ bgpd_flags=NO
+ bootparamd_flags=NO
+ cron_flags=
+Index: src/etc/rc.d/aprsd
+===================================================================
+--- /dev/null
++++ src/etc/rc.d/aprsd
+@@ -0,0 +1,11 @@
++#!/bin/ksh
++#
++# $OpenBSD$
++
++daemon="/usr/sbin/aprsd"
++
++. /etc/rc.d/rc.subr
++
++rc_reload=NO
++
++rc_cmd $1
