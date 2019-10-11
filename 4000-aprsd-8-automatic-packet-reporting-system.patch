@@ -1,0 +1,556 @@
+Index: src/usr.sbin/aprsd/Makefile
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsd/Makefile
+@@ -0,0 +1,7 @@
++#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
++
++PROG=	aprsd
++SRCS=	aprsd.c gps.c
++MAN=	aprsd.8
++
++.include <bsd.prog.mk>
+Index: src/usr.sbin/aprsd/aprsd.8
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsd/aprsd.8
+@@ -0,0 +1,98 @@
++.Dd October 11, 2019
++.Dt APRSD 8
++.Os
++.Sh NAME
++.Nm aprsd
++.Nd automatic packet reporting system daemon
++.Sh SYNOPSIS
++.Nm
++.Op Fl DG
++.Op Fl g Ar sensor
++.Op Fl i Ar interface
++.Op Fl p Ar period
++.Op Fl l Ar latitude
++.Op Fl L Ar longitude
++.Sh DESCRIPTION
++.Nm
++sends
++.Em APRS
++position reports using either GPS or user-supplied position information.
++.Pp
++.Nm
++is usually started at boot time, and can be enabled by
++setting the following in
++.Pa /etc/rc.conf.local :
++.Pp
++.Dl aprsd_flags=\&"\&"
++.Pp
++See
++.Xr rc 8
++and
++.Xr rc.conf 8
++for more information on the boot process
++and enabling daemons.
++.Pp
++The callsign found in
++.Xr mycallsign 5
++will be used as the originating address.
++The SSID is hardcoded as -6 for now.
++.Pp
++APRS uses
++.Em AX.25
++as a link layer, which restricts callsign length to at most 6 characters.
++If your callsign is longer than 6 characters then
++.Nm
++will refuse to start.
++.Pp
++The
++.Xr nmea 4
++driver can be used to provide a live GPS position.
++Other drivers that update the sensors framework may also work.
++.Pp
++If the sensor cannot be found, or the sensor does not have a valid latitude or
++longitude, but a fixed latitude and longitude were provided, then the fixed
++position will be used.
++If no fixed position was provided, beacons are disabled until the sensor
++provides a valid position again.
++.Pp
++Fixed positions are given in microdegrees.
++To convert degrees to microdegrees simply multiply by 10^6.
++The format should only contain an optional minus (-) sign followed by numbers.
++North and east co-ordinates are positive, south and west are negative.
++.Sh OPTIONS
++.Bl -tag -width Ds
++.It Fl D
++Do not daemonize.
++.It Fl G
++Disable GPS.
++If
++.Fl g
++is also specified, the order of the options will determine the interpretation.
++The last of the options wins.
++.It Fl g Ar sensor
++Sensor name for GPS position (default: nmea0).
++.It Fl i Ar interface
++Interface name to broadcast position reports (default: axkiss0).
++.It Fl p Ar period
++Period in seconds between broadcasts (default: 300).
++.It Fl l Ar latitude
++Fixed latitude in microdegrees.
++.It Fl L Ar longitude
++Fixed longitude in microdegrees.
++.El
++.Sh SEE ALSO
++.Xr nmea 4 ,
++.Xr mycallsign 5
++.Sh HISTORY
++.Nm
++first appeared in HamBSD XXX.
++.Sh AUTHORS
++The
++.Nm
++daemon was written for the HamBSD project by
++.An Iain R. Learmonth Aq Mt irl@fsfe.org
++for the public domain.
++.Sh CAVEATS
++It is not currently possible to broadcast position reports on multiple
++interfaces with a single instance.
++It is however possible to manually start multiple instances.
+Index: src/usr.sbin/aprsd/aprsd.c
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsd/aprsd.c
+@@ -0,0 +1,359 @@
++/*
++ * aprsd - automatic packet reporting system daemon
++ *
++ * Written by Iain R. Learmonth <irl@fsfe.org> for the public domain.
++ */
++
++#include <stdio.h>
++#include <string.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <syslog.h>
++#include <stdarg.h>
++#include <signal.h>
++#include <pthread.h>
++#include <errno.h>
++#include <time.h>
++
++#include <sys/queue.h>
++#include <sys/times.h>
++#include <sys/time.h>
++#include <sys/ioctl.h>
++#include <net/bpf.h>
++#include <sys/socket.h>
++#include <net/if.h>
++#include <netinet/in.h>
++#include <netinet/if_ether.h>
++
++#include "gps.h"
++
++struct aprs_pos_beacon_attrs {
++	char	*call;         /* callsign as ascii text */
++	char	*device;       /* interface name */
++	char	*gps;          /* gps sensor name (e.g. nmea0) */
++	int	 bpf;          /* bpf file handle */
++	int	 period;       /* beacon period */
++	int	 fixed;        /* 2 if both fixed lat and lon are supplied */
++	int	 fixed_lon;    /* fixed longitude if no GPS */
++	int	 fixed_lat;    /* fixed latitude if no GPS */
++};
++
++static __dead void	 fatal(char *);
++static __dead void	 usage(void);
++static void		 signal_handler(int);
++static char 		*aprs_lat_ntoa(long long);
++static char 		*aprs_lon_ntoa(long long);
++static char		*read_mycallsign(void);
++static int		 aprs_pos_compose(char *, struct aprs_pos_beacon_attrs *);
++static int		 aprs_open(char *);
++static void		 daemonize();
++static void		*aprs_pos_beacon_loop(void *);
++
++static __dead void
++fatal(char* msg)
++{
++	syslog(LOG_DAEMON | LOG_ERR,
++	    "%s", msg);
++	exit(1);
++}
++
++static __dead void
++usage(void)
++{
++	extern char *__progname;
++
++	fprintf(stderr, "usage: %s [-D] [-i interface] [-p period]\n",
++	    __progname);
++	exit(1);
++}
++
++static void
++signal_handler(int sig)
++{
++	switch(sig) {
++	case SIGHUP:
++		syslog(LOG_DAEMON | LOG_INFO, "caught hangup signal");
++		break;
++	case SIGTERM:
++		syslog(LOG_DAEMON | LOG_EMERG,
++		    "caught terminate signal, shutting down");
++		exit(0);
++		break;
++	}
++}
++
++static char *
++aprs_lat_ntoa(long long udeg)
++{
++	static char buf[9];
++	long deg, rem, umnt, mnt, dmt;
++	int north;
++	if (udeg < 0) {
++		udeg *= -1;
++		north = 0;
++	} else {
++		north = 1;
++	}
++	deg = udeg / 1000000;
++	snprintf(buf, 3, "%02ld", deg);
++	umnt = udeg % 1000000 * 60;
++	mnt = umnt / 1000000;
++	snprintf(&buf[2], 3, "%02ld", mnt);
++	buf[4] = '.';
++	dmt = umnt % 1000000;
++	snprintf(&buf[5], 3, "%02ld", dmt);
++	if (north) {
++		buf[7] = 'N';
++	} else {
++		buf[7] = 'S';
++	}
++	buf[8] = '\0';
++	return buf;
++}
++
++static char *
++aprs_lon_ntoa(long long udeg)
++{
++	static char buf[10];
++	long deg, rem, umnt, mnt, dmt;
++	int east;
++	if (udeg < 0) {
++		udeg *= -1;
++		east = 0;
++	} else {
++		east = 1;
++	}
++	deg = udeg / 1000000;
++	snprintf(buf, 4, "%03ld", deg);
++	umnt = udeg % 1000000 * 60;
++	mnt = umnt / 1000000;
++	snprintf(&buf[3], 3, "%02ld", mnt);
++	buf[5] = '.';
++	dmt = umnt % 1000000;
++	snprintf(&buf[6], 3, "%02ld", dmt);
++	if (east) {
++		buf[8] = 'E';
++	} else {
++		buf[8] = 'W';
++	}
++	buf[9] = '\0';
++	return buf;
++}
++
++static char *
++read_mycallsign(void)
++{
++	FILE    *mcp;
++	char    *call, *nl;
++	size_t  callsize = 0;
++	ssize_t calllen;
++
++	call = NULL;
++
++	if ((mcp = fopen("/etc/mycallsign", "r")) == NULL)
++		fatal("could not open /etc/mycallsign");
++	if ((calllen = getline(&call, &callsize, mcp)) != -1) {
++		if ((nl = strchr(call, '\n')) != NULL)
++			nl[0] = '\0';
++		return call;
++	}
++	fatal("could not read callsign from /etc/mycallsign");
++}
++
++/*
++ * Composes an APRS position report. The length of the composed frame is
++ * returned.
++ */
++int
++aprs_pos_compose(char *buf, struct aprs_pos_beacon_attrs *attrs)
++{
++	struct gps_position pos;
++	char* hp;
++	int calllen, i;
++
++	char hdr[] = {
++		'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
++		0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,                         // source
++		0x03,                                                             // ?
++		0xf0,                                                             // no layer 3
++		'!',                                                              // position report
++		0, 0, 0, 0, 0, 0, 0, 0,                                           // latitude
++		'/',                                                              // table
++		0, 0, 0, 0, 0, 0, 0, 0, 0,                                        // longitude
++		'/',                                                              // symbol
++		'H', 'a', 'm', 'B', 'S', 'D', ' ', 'a', 'p', 'r', 's', 'd'        // comment
++	};
++
++	/* copy header to buf */
++	memcpy(buf, hdr, sizeof(hdr));
++
++	/* copy callsign to buf */
++	calllen = strlen(attrs->call);
++	if (strlen(attrs->call) > 6) {
++		fatal("callsign in /etc/mycallsign too long");
++	}
++	for (i = 0; i < calllen; i++)
++		buf[7 + i] = attrs->call[i] << 1;
++
++	/* get gps location and copy to buf */
++	if (attrs->gps != NULL && gps_get_position(&pos, attrs->gps) == 2) {
++		memcpy(&buf[17], aprs_lat_ntoa(pos.lat), 8);
++		memcpy(&buf[26], aprs_lon_ntoa(pos.lon), 9);
++	} else if (attrs->fixed == 2) {
++		memcpy(&buf[17], aprs_lat_ntoa(attrs->fixed_lat), 8);
++		memcpy(&buf[26], aprs_lon_ntoa(attrs->fixed_lon), 9);
++	} else {
++		return 0;
++	}
++
++	return sizeof(hdr);
++}
++
++/*
++ * Open a BPF file and attach it to the interface named 'device'.
++ * Set immediate mode.
++ */
++int
++aprs_open(char *device)
++{
++	int bpf, immediate, iflen;
++	struct ifreq bound_if;
++	u_int dlt;
++
++	if ((bpf = open("/dev/bpf", O_RDWR)) == -1)
++		fatal("/dev/bpf failed to open");
++
++	/* Set immediate mode to process packets as they arrive. */
++	immediate = 1;
++	if (ioctl(bpf, BIOCIMMEDIATE, &immediate) == -1)
++		fatal("failed to set immediate mode");
++
++	ioctl(bpf, BIOCSHDRCMPLT, &immediate);
++
++	/* Bind the network interface. */
++	iflen = strlen(device);
++	if (strlcpy(bound_if.ifr_name, device, sizeof(bound_if.ifr_name))
++	    < iflen)
++		fatal("interface name too long");
++	if(ioctl(bpf, BIOCSETIF, (caddr_t)&bound_if) == -1)
++		fatal("could not bind to interface");
++
++	return bpf;
++}
++
++static void
++daemonize()
++{
++	int i;
++	i = daemon(0, 0);
++	signal(SIGCHLD, SIG_IGN); /* ignore child */
++	signal(SIGTSTP, SIG_IGN); /* ignore tty signals */
++	signal(SIGTTOU, SIG_IGN);
++	signal(SIGTTIN, SIG_IGN);
++	signal(SIGHUP, signal_handler); /* catch hangup signal */
++	signal(SIGTERM, signal_handler); /* catch kill signal */
++}
++
++static void *
++aprs_pos_beacon_loop(void *arguments)
++{
++	struct aprs_pos_beacon_attrs *attrs = (struct aprs_pos_beacon_attrs *)arguments;
++	char framebuf[576];
++	int framelen;
++	int unslept;
++
++	syslog(LOG_DAEMON | LOG_INFO,
++	    "started up beacon thread (interface %s, callsign: %s)", attrs->device, attrs->call);
++
++	for (;;) {
++		framelen = aprs_pos_compose(framebuf, attrs);
++		if (write(attrs->bpf, &framebuf, framelen) != framelen) {
++			syslog(LOG_DAEMON | LOG_EMERG,
++			    "failed to send ident frame, might want to unplug");
++			syslog(LOG_DAEMON | LOG_ERR,
++			    "failure reason: %m");
++		}
++		unslept = attrs->period;
++		while (unslept > 0)
++			unslept = sleep(unslept);
++	}
++}
++
++int
++main(int argc, char **argv)
++{
++	int beacon, bpf, daemon;
++	char ch, *device, *gps;
++	struct aprs_pos_beacon_attrs *beacon_attrs;
++
++	beacon_attrs = malloc(sizeof(struct aprs_pos_beacon_attrs));
++
++	/* option defaults */
++	beacon = 1;
++	daemon = 1;
++	device = "axkiss0";
++	gps = "nmea0";
++	beacon_attrs->period = 300;
++	beacon_attrs->fixed = 0;
++	beacon_attrs->fixed_lat = 0;
++	beacon_attrs->fixed_lon = 0;
++
++	while ((ch = getopt(argc, argv, "l:L:g:i:p:DGn")) != -1) {
++		switch (ch) {
++		case 'g':
++			gps = optarg;
++			break;
++		case 'G':
++			gps = NULL;
++			break;
++		case 'i':
++			device = optarg;
++			break;
++		case 'p':
++			beacon_attrs->period = atoi(optarg);
++			break;
++		case 'D':
++			daemon = 0;
++			break;
++		case 'l':
++			beacon_attrs->fixed += 1;
++			beacon_attrs->fixed_lat = atoi(optarg);
++			break;
++		case 'L':
++			beacon_attrs->fixed += 1;
++			beacon_attrs->fixed_lon = atoi(optarg);
++			break;
++		default:
++			usage();
++			break;
++		}
++	}
++	argc -= optind;
++	argv += optind;
++
++	if (beacon_attrs->fixed != 2 && gps == NULL)
++		fatal("no gps device or location given");
++
++	char *call = read_mycallsign();
++
++	/* Check for root privileges. */
++	if (geteuid())
++		fatal("need root privileges");
++
++	if (daemon)
++		daemonize();
++
++	bpf = aprs_open(device);
++
++	if (unveil(NULL, NULL) == -1)
++		fatal("failed to unveil");
++	if (pledge("stdio cpath wpath", NULL) == -1)
++		fatal("failed to pledge");
++
++	beacon_attrs->call = call;
++	beacon_attrs->device = device;
++	beacon_attrs->gps = gps;
++	beacon_attrs->bpf = bpf;
++	aprs_pos_beacon_loop(beacon_attrs);
++}
+Index: src/usr.sbin/aprsd/gps.c
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsd/gps.c
+@@ -0,0 +1,60 @@
++
++#include <string.h>
++#include <err.h>
++
++#include <sys/types.h>
++#include <sys/sysctl.h>
++#include <sys/time.h>
++#include <sys/sensors.h>
++
++#include "gps.h"
++
++static struct sensordev *
++gps_find_sensor(char *name)
++{
++	int mib[3];
++	static struct sensordev sd;
++	size_t sdlen;
++
++	mib[0] = CTL_HW;
++	mib[1] = HW_SENSORS;
++	sdlen = sizeof(sd);
++	for (mib[2] = 0; mib[2] < 10; mib[2]++) {
++		if (sysctl(mib, 3, &sd, &sdlen, NULL, 0) == -1)
++			err(1, "sysctl");
++		if (strcmp(name, sd.xname) == 0) {
++			return &sd;
++		}
++	}
++	return NULL;
++}
++
++int
++gps_get_position(struct gps_position *pos, char *sensor_name)
++{
++	struct sensor s;
++	struct sensordev *sd;
++	int mib[5];
++	int lat, lon;
++	size_t slen;
++
++	lat = lon = 0;
++	slen = sizeof(s);
++	sd = gps_find_sensor(sensor_name);
++	mib[0] = CTL_HW;
++	mib[1] = HW_SENSORS;
++	mib[2] = sd->num;
++	mib[3] = SENSOR_ANGLE;
++	for (mib[4] = 0; mib[4] < sd->maxnumt[mib[3]]; mib[4]++) {
++		if (sysctl(mib, 5, &s, &slen, NULL, 0) == -1)
++			continue;
++		if (s.type == SENSOR_ANGLE && strcmp("Latitude", s.desc) == 0) {
++			lat = 1;
++			pos->lat = s.value;
++		} else if (s.type == SENSOR_ANGLE && strcmp("Longitude", s.desc) == 0) {
++			lon = 1;
++			pos->lon = s.value;
++		}
++	}
++	return lat + lon;
++}
+Index: src/usr.sbin/aprsd/gps.h
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsd/gps.h
+@@ -0,0 +1,7 @@
++
++struct gps_position {
++	long long lat;
++	long long lon;
++};
++
++int gps_get_position(struct gps_position *, char *);
