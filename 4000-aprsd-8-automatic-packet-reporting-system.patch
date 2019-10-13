@@ -481,10 +481,11 @@ Index: src/usr.sbin/aprsd/gps.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsd/gps.c
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,67 @@
 +
 +#include <string.h>
 +#include <err.h>
++#include <errno.h>
 +
 +#include <sys/types.h>
 +#include <sys/sysctl.h>
@@ -503,12 +504,16 @@ Index: src/usr.sbin/aprsd/gps.c
 +	mib[0] = CTL_HW;
 +	mib[1] = HW_SENSORS;
 +	sdlen = sizeof(sd);
-+	for (mib[2] = 0; mib[2] < 10; mib[2]++) {
-+		if (sysctl(mib, 3, &sd, &sdlen, NULL, 0) == -1)
++	for (mib[2] = 0; ; mib[2]++) {
++		if (sysctl(mib, 3, &sd, &sdlen, NULL, 0) == -1) {
++			if (errno == ENXIO)
++				continue;
++			if (errno == ENOENT)
++				break;
 +			err(1, "sysctl");
-+		if (strcmp(name, sd.xname) == 0) {
-+			return &sd;
 +		}
++		if (strcmp(name, sd.xname) == 0)
++			return &sd;
 +	}
 +	return NULL;
 +}
@@ -532,10 +537,12 @@ Index: src/usr.sbin/aprsd/gps.c
 +	for (mib[4] = 0; mib[4] < sd->maxnumt[mib[3]]; mib[4]++) {
 +		if (sysctl(mib, 5, &s, &slen, NULL, 0) == -1)
 +			continue;
-+		if (s.type == SENSOR_ANGLE && strcmp("Latitude", s.desc) == 0) {
++		if (s.type == SENSOR_ANGLE && strcmp("Latitude", s.desc) == 0 &&
++		    s.status == SENSOR_S_OK) {
 +			lat = 1;
 +			pos->lat = s.value;
-+		} else if (s.type == SENSOR_ANGLE && strcmp("Longitude", s.desc) == 0) {
++		} else if (s.type == SENSOR_ANGLE && strcmp("Longitude", s.desc) == 0 &&
++		    s.status == SENSOR_S_OK) {
 +			lon = 1;
 +			pos->lon = s.value;
 +		}
