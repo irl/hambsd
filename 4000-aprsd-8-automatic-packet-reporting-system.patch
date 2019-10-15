@@ -481,7 +481,7 @@ Index: src/usr.sbin/aprsd/gps.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsd/gps.c
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,68 @@
 +
 +#include <string.h>
 +#include <err.h>
@@ -529,7 +529,8 @@ Index: src/usr.sbin/aprsd/gps.c
 +
 +	lat = lon = 0;
 +	slen = sizeof(s);
-+	sd = gps_find_sensor(sensor_name);
++	if ((sd = gps_find_sensor(sensor_name)) == NULL)
++		return 0;
 +	mib[0] = CTL_HW;
 +	mib[1] = HW_SENSORS;
 +	mib[2] = sd->num;
