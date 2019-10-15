@@ -1,0 +1,396 @@
+Index: src/usr.sbin/aprsisd/Makefile
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsisd/Makefile
+@@ -0,0 +1,9 @@
++#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
++
++PROG=	aprsisd
++SRCS=	aprsisd.c
++MAN=	aprsisd.8
++
++LDFLAGS= -lpthread
++
++.include <bsd.prog.mk>
+Index: src/usr.sbin/aprsisd/aprsisd.8
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsisd/aprsisd.8
+@@ -0,0 +1,50 @@
++.Dd October 13, 2019
++.Dt APRSISD 8
++.Os
++.Sh NAME
++.Nm aprsisd
++.Nd APRS-IS daemon
++.Sh
++.Sh SYNOPSIS
++.Nm aprsisd
++.Op Fl D
++.Op Fl c Ar callsign
++.Op Fl f Ar filter
++.Op Fl p Ar password
++.Op Fl t Ar /dev/tapX
++server
++.Sh DESCRIPTION
++APRS-IS is an Internet-based network which inter-connects various APRS radio
++networks throughout the world (and space).
++The
++.Nm
++daemon works together with the kernel
++.Xr tap 4
++driver to establish a connection to an APRS-IS server and present it as a
++virtual network interface.
++.Nm
++can also authenticate to the server and set an optional filter.
++.Pp
++By default the callsign from
++.Xr mycallsign 5
++will be used.
++.Pp
++.Nm
++itself will not produce or consume packets.
++A separate application, for example
++.Xr aprsd 8 ,
++must be used for that purpose.
++.Sh DIAGNOSTICS
++.Sh SEE ALSO
++.Xr tun 4 ,
++.Xr mycallsign 5 ,
++.Xr aprsd 8
++.Sh HISTORY
++.Nm
++first appeared in HamBSD XXX.
++.Sh AUTHORS
++The
++.Nm
++daemon was written for the HamBSD project by
++.An Iain R. Learmonth Aq Mt irl@fsfe.org
++for the public domain.
+Index: src/usr.sbin/aprsisd/aprsisd.c
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsisd/aprsisd.c
+@@ -0,0 +1,322 @@
++
++#include <stdio.h>
++#include <fcntl.h>
++#include <err.h>
++#include <string.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <pthread.h>
++#include <ctype.h>
++
++#include <sys/types.h>
++#include <sys/ioctl.h>
++#include <sys/socket.h>
++#include <net/if.h>
++#include <net/if_tun.h>
++#include <netinet/in.h>
++#include <netinet/tcp.h>
++#include <arpa/inet.h>
++
++#define SOFTWARE_NAME "aprsisd"
++#define SOFTWARE_VERSION "0.1"
++
++#define ADDRESS "85.90.180.26"
++#define PORT 14580
++
++/*
++ * TODO:
++ *
++ * - don't hardcode the server to use
++ * - really check the callsign is valid
++ * - extract paths
++ */
++
++/*
++ * Much of the APRS-IS protocol has been based on the details found at:
++ * http://www.aprs-is.net/Connecting.aspx
++ */
++
++#define AX25ADDR_LASTCALL 0x01
++#define AX25ADDR_RESERVED (0x20 | 0x40)
++#define AX25ADDR_CR       0x80
++
++#define AX25_MAXDIGIS 8
++
++#define TNC2_MAXLINE 512
++
++struct ax25_address {
++	unsigned char		ax25_call[7];
++};
++
++struct sockaddr_ax25 {
++	u_int8_t		sax_len;
++	sa_family_t		sax_family;
++	struct ax25_address	sax_addr;
++	int8_t			sax_pathlen;
++	struct ax25_address	sax_path[AX25_MAXDIGIS];
++};
++
++int isd, tap;
++
++int aprsis_pass(char *);
++char *ax25_ntoa(struct ax25_address *);
++struct ax25_address *ax25_aton(char *);
++void ax25_input(char *, int);
++void ax25_output(char *, int);
++char *tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
++void tnc2_input(char *);
++void tnc2_output(char *);
++int loop(int, int);
++int main(int, char **);
++
++static char *
++read_mycallsign(void)
++{
++	FILE    *mcp;
++	char    *call, *nl;
++	size_t  callsize = 0;
++	ssize_t calllen;
++
++	call = NULL;
++
++	if ((mcp = fopen("/etc/mycallsign", "r")) == NULL)
++		err(1, "fopen"); //fatal("could not open /etc/mycallsign");
++	if ((calllen = getline(&call, &callsize, mcp)) != -1) {
++		if ((nl = strchr(call, '\n')) != NULL)
++			nl[0] = '\0';
++		return call;
++	}
++	err(1, "getline"); //fatal("could not read callsign from /etc/mycallsign");
++}
++
++int
++aprsis_pass(char *call)
++{
++	char *cp, *ep;
++	int16_t hash;
++	cp = call;
++	if ((ep = strchr(call, '-')) == NULL)
++		ep = cp + strlen(call);
++	hash = 0x73e2;
++	while (cp < ep) {
++		/* TODO toupper */
++		hash ^= (*(cp++) << 8);
++		if (cp < ep)
++			hash ^= (*(cp++));
++	}
++	return hash;
++}
++
++char *
++ax25_ntoa(struct ax25_address *axp)
++{
++	static char buf[10];
++	int i, ssid;
++	ssid = (axp->ax25_call[6] & 0b00011110) >> 1;
++	bzero(buf, 10);
++	for (i = 0; i < 6; i++) {
++		if (axp->ax25_call[i] == 0x40)
++			break;
++		buf[i] = axp->ax25_call[i] >> 1;
++	}
++	if (ssid == 0) {
++		buf[i] = '\0';
++	} else {
++		sprintf(&buf[i], "-%d", ssid);
++	}
++	return buf;
++}
++
++struct ax25_address *
++ax25_aton(char *s)
++{
++	static struct ax25_address ax;
++	char ssid[3];
++	int i;
++	memcpy(&ax, "\x40\x40\x40\x40\x40\x40\x00", sizeof(struct ax25_address));
++	for (i = 0; ; i++) {
++		if (s[i] == '\0' || s[i] == '>' || s[i] == ',' || s[i] == ':') {
++			ax.ax25_call[6] = 0;
++			break;
++		}
++		if (s[i] == '-') {
++			if (isdigit(s[++i])) {
++				bzero(ssid, 3);
++				ssid[0] = s[i];
++				if (isdigit(s[++i]))
++					ssid[1] = s[i];
++				ax.ax25_call[6] = ((u_int8_t)atoi(ssid)) << 1;
++				if ((ax.ax25_call[6] & 0b11100001) != 0) {
++					/* non AX.25 SSID */
++					return NULL;
++				}
++				break;
++			} else {
++				/* callsign is malformed */
++				return NULL;
++			}
++		}
++		ax.ax25_call[i] = s[i] << 1;
++	}
++	ax.ax25_call[6] |= AX25ADDR_RESERVED;
++	return &ax;
++}
++
++/*
++ * TODO: things get really messed up if the packet buf isn't null terminated!!!!
++ */
++void
++ax25_input(char *pkt, int len)
++{
++	char dst[10], src[10], tl[TNC2_MAXLINE];
++	strlcpy(dst, ax25_ntoa((struct ax25_address *)&pkt[7]), 10);
++	strlcpy(src, ax25_ntoa((struct ax25_address *)&pkt[0]), 10);
++	snprintf(tl, TNC2_MAXLINE, "%s>%s:%s\n", dst, src, &pkt[16]);
++	tnc2_output(tl);
++}
++
++void
++ax25_output(char *pkt, int len)
++{
++	if (write(tap, pkt, len) == -1)
++		err(1, "ax25_output: write");
++}
++
++char *
++tnc2_hdr_to_ax25(struct sockaddr_ax25 *saddr, struct sockaddr_ax25 *daddr,
++    char *s)
++{
++	struct ax25_address *addr;
++	char* cp;
++
++	if ((addr = ax25_aton(s)) == NULL)
++		return NULL;
++	memcpy(&saddr->sax_addr, addr, sizeof(struct ax25_address));
++	cp = strchr(s, '>') + 1;
++	if ((addr = ax25_aton(cp)) == NULL)
++		return NULL;
++	memcpy(&daddr->sax_addr, addr, sizeof(struct ax25_address));
++	/* TODO: extract path too */
++	saddr->sax_pathlen = 0;
++	saddr->sax_addr.ax25_call[6] |= AX25ADDR_LASTCALL;
++	daddr->sax_addr.ax25_call[6] |= AX25ADDR_CR;
++	return strchr(s, ':') + 1;
++}
++
++void
++tnc2_input(char *s)
++{
++	char pkt[1024], *payload;
++	struct sockaddr_ax25 saddr, daddr;
++	int len;
++	if ((payload = tnc2_hdr_to_ax25(&saddr, &daddr, s)) == NULL)
++		return;
++	memcpy(pkt, &daddr.sax_addr, sizeof(struct ax25_address));
++	memcpy(&pkt[7], &saddr.sax_addr, sizeof(struct ax25_address));
++	pkt[14] = 0x03;
++	pkt[15] = 0xf0;
++	/* TODO: unpack path from saddr */
++	len = 16 + strlcpy(&pkt[16], payload, 1024 - 16);
++	ax25_output(pkt, len);
++}
++
++void
++tnc2_output(char *s)
++{
++	int len = strlen(s);
++	printf("snd: %s\n", s);
++	if (write(isd, s, len) == -1)
++		err(1, "tnc2_output: write");
++}
++
++void *
++aprsis_input_loop(void *arguments)
++{
++	char buf[1500];
++	int nr;
++
++	bzero(buf, 1500);
++
++	while ((nr = read(tap, buf, 1500)) != -1 && nr != 0) {
++		/* TODO: validate? */
++		ax25_input(buf, nr);
++	}
++	err(1, "read");
++}
++
++void *
++local_input_loop(void *arguments)
++{
++	char buf[TNC2_MAXLINE];
++	int ei, pos, nr;
++	char *ep;
++
++	pos = 0;
++	bzero(buf, TNC2_MAXLINE);
++
++	while ((nr = read(isd, &buf[pos], TNC2_MAXLINE - pos)) != -1 && nr != 0) {
++		pos += nr;
++		if ((ep = strchr(buf, '\n')) != NULL) {
++			ei = ep - buf;
++			if (buf[ei - 1] == '\r')
++				buf[ei - 1] = '\0';
++			buf[ei++] = '\0'; /* move index to start of new packet */
++			printf("rcv: %s\n", buf);
++			if (ei > 8 && buf[0] != '#') { /* TODO guess a better number */
++				tnc2_input(buf);
++			}
++			if (ei < pos)
++				memmove(buf, &buf[ei], pos - ei);
++			pos -= ei;
++		}
++	}
++	err(1, "read");
++}
++
++int
++main(int argc, char **argv)
++{
++	struct sockaddr_in addr;
++	struct tuninfo ti;
++	int nodelay;
++
++	tap = open("/dev/axtap0", O_RDWR);
++
++	ioctl(tap, TUNGIFINFO, &ti);
++	ti.flags = IFF_UP | IFF_POINTOPOINT;
++	ioctl(tap, TUNSIFINFO, &ti);
++
++	if ((isd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
++		err(1, "socket");
++		return -1;
++	}
++
++	addr.sin_port = htons(PORT);
++	addr.sin_family = AF_INET;
++
++	inet_pton(AF_INET, ADDRESS, &addr.sin_addr);
++
++	if (connect(isd, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1) {
++		err(1, "connect");
++		return -1;
++	}
++
++	nodelay = 1;
++	setsockopt(isd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
++
++	char login[100]; /* TODO: guess better */
++	char *call = read_mycallsign();
++	int pass = aprsis_pass(call);
++       	sprintf(login, "user %s-6 pass %d vers aprsisd 0.1dev filter m/800\r\n", call, pass); /* TODO snprinf */
++
++	if (write(isd, login, strlen(login)) == -1)
++		err(1, "write");
++
++	pthread_t aprsis_input_thread;
++	pthread_t local_input_thread;
++
++	pthread_create(&aprsis_input_thread, NULL, aprsis_input_loop, NULL);
++	pthread_create(&local_input_thread, NULL, local_input_loop, NULL);
++
++	while(1);
++}
