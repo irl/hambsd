@@ -107,7 +107,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsd/aprsd.c
-@@ -0,0 +1,362 @@
+@@ -0,0 +1,459 @@
 +/*
 + * aprsd - automatic packet reporting system daemon
 + *
@@ -139,16 +139,19 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +#include "aprsd.h"
 +#include "gps.h"
 +
-+struct aprs_pos_beacon_attrs {
-+	char	*call;         /* callsign as ascii text */
-+	char	*comment;      /* comment text */
-+	char	*device;       /* interface name */
-+	char	*gps;          /* gps sensor name (e.g. nmea0) */
-+	int	 bpf;          /* bpf file handle */
-+	int	 period;       /* beacon period */
-+	int	 fixed;        /* 2 if both fixed lat and lon are supplied */
-+	int	 fixed_lon;    /* fixed longitude if no GPS */
-+	int	 fixed_lat;    /* fixed latitude if no GPS */
++struct aprs_beacon_attrs {
++	long long	 fixed_lon;	/* fixed longitude if no GPS */
++	long long	 fixed_lat;	/* fixed latitude if no GPS */
++	time_t		 next_time;	/* next beacon time */
++	int		 bpf;		/* bpf file handle; TODO: look this up instead */
++	int		 interval;	/* beacon period */
++	int		 flags;		/* aprsd.h: BEACONF_* */
++	int		 type;		/* aprsd.h: BEACONT_* */
++	char		*call;		/* callsign as ascii text */
++	char		*comment;	/* comment text */
++	char		*name;		/* object/item name */
++	char		*interface;	/* interface name */
++	char		*sensor;	/* gps sensor name (e.g. nmea0) */
 +};
 +
 +static __dead void	 fatal(char *);
@@ -157,10 +160,10 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +static char 		*aprs_lat_ntoa(long long);
 +static char 		*aprs_lon_ntoa(long long);
 +static char		*read_mycallsign(void);
-+static int		 aprs_pos_compose(char *, struct aprs_pos_beacon_attrs *);
++static int		 aprs_compose(char *, struct aprs_beacon_attrs *);
 +static int		 aprs_open(char *);
 +static void		 daemonize();
-+static void		*aprs_pos_beacon_loop(void *);
++static void		*aprs_beacon_loop(int, struct aprs_beacon_attrs *[]);
 +
 +static __dead void
 +fatal(char* msg)
@@ -273,53 +276,129 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	fatal("could not read callsign from /etc/mycallsign");
 +}
 +
++static const char pon_hdr[] = {
++	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
++	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,                         // source
++	0x03,                                                             // ui frame
++	0xf0,                                                             // no layer 3
++	'!',                                                              // position report, no timestamp
++	0, 0, 0, 0, 0, 0, 0, 0,                                           // latitude
++	'/',                                                              // table
++	0, 0, 0, 0, 0, 0, 0, 0, 0,                                        // longitude
++	'/',                                                              // symbol
++};
++static const int pon_hdr_size = sizeof(pon_hdr);
++
++static const char pot_hdr[] = {
++	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
++	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	// source
++	0x03,						// ui frame
++	0xf0,						// no layer 3
++	'/',						// position report, with timestamp
++	0, 0, 0, 0, 0, 0, 'z',				// timestamp
++	0, 0, 0, 0, 0, 0, 0, 0,				// latitude
++	'/',						// symbol table
++	0, 0, 0, 0, 0, 0, 0, 0, 0,			// longitude
++	'/',						// symbol
++};
++static const int pot_hdr_size = sizeof(pot_hdr);
++
++static const char obj_hdr[] = {
++	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
++	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	// source
++	0x03,						// ui frame
++	0xf0,						// no layer 3
++	';',						// object report
++	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',	// object name
++	'_',						// object live
++	0, 0, 0, 0, 0, 0, 'z',				// timestamp
++	0, 0, 0, 0, 0, 0, 0, 0,				// latitude
++	'/',						// symbol table
++	0, 0, 0, 0, 0, 0, 0, 0, 0,			// longitude
++	'/'						// symbol
++};
++static const int obj_hdr_size = sizeof(obj_hdr);
++
 +/*
 + * Composes an APRS position report. The length of the composed frame is
-+ * returned.
++ * returned. The provided buf must be at least APRS_MAXLEN bytes in size.
++ *
++ * TODO: APRS_MAXLEN, 256 bytes is the maximum size of a UI frame payload, but
++ * the buf here also contains the header. I don't know if the payload size
++ * decreases as the path increases. It is possible we could have longer packets
++ * but there are also going to be a large number of radios that would not
++ * support them.
 + */
-+int
-+aprs_pos_compose(char *buf, struct aprs_pos_beacon_attrs *attrs)
++static int
++aprs_compose(char *buf, struct aprs_beacon_attrs *attrs)
 +{
 +	struct gps_position pos;
-+	char* hp;
-+	int calllen, i;
++	time_t now;
++	char *lat, *lon, *name, timestamp[7];
++	int calllen, commentlen, pktlen, i;
 +
-+	char hdr[] = {
-+		'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
-+		0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,                         // source
-+		0x03,                                                             // ?
-+		0xf0,                                                             // no layer 3
-+		'!',                                                              // position report
-+		0, 0, 0, 0, 0, 0, 0, 0,                                           // latitude
-+		'/',                                                              // table
-+		0, 0, 0, 0, 0, 0, 0, 0, 0,                                        // longitude
-+		'/',                                                              // symbol
-+		'H', 'a', 'm', 'B', 'S', 'D', ' ', 'a', 'p', 'r', 's', 'd'        // comment
-+	};
++	if (attrs->sensor != NULL && gps_get_position(&pos, attrs->sensor) == 2) {
++		lat = strdup(aprs_lat_ntoa(pos.lat));
++		lon = strdup(aprs_lon_ntoa(pos.lon));
++	} else if ((attrs->flags & BEACONF_POSSET) == BEACONF_POSSET) {
++		lat = strdup(aprs_lat_ntoa(attrs->fixed_lat));
++		lon = strdup(aprs_lon_ntoa(attrs->fixed_lon));
++	} else {
++		return 0;
++	}
 +
-+	/* copy header to buf */
-+	memcpy(buf, hdr, sizeof(hdr));
++	time(&now);
++	strftime(timestamp, 7, "%d%H%M", gmtime(&now));
 +
-+	/* copy callsign to buf */
++	switch (attrs->type) {
++	case BEACONT_PON:
++		pktlen = pon_hdr_size;
++		memcpy(buf, pon_hdr, pktlen);
++		memcpy(&buf[17], lat, 8);
++		memcpy(&buf[26], lon, 9);
++		break;
++	case BEACONT_POT:
++		pktlen = pot_hdr_size;
++		memcpy(buf, pot_hdr, pktlen);
++		memcpy(&buf[17], timestamp, 6);
++		memcpy(&buf[24], lat, 8);
++		memcpy(&buf[33], lon, 9);
++		break;
++	case BEACONT_OBJ:
++		pktlen = obj_hdr_size;
++		memcpy(buf, obj_hdr, pktlen);
++		memcpy(&buf[17], attrs->name, strlen(attrs->name));
++		memcpy(&buf[27], timestamp, 6);
++		memcpy(&buf[34], lat, 8);
++		memcpy(&buf[43], lon, 9);
++		break;
++	default:
++		/* TODO: unknown type */
++		return 0;
++	}
++
++	free(lat);
++	free(lon);
++
 +	calllen = strlen(attrs->call);
-+	if (strlen(attrs->call) > 6) {
++	if (calllen > 6) {
 +		fatal("callsign in /etc/mycallsign too long");
 +	}
 +	for (i = 0; i < calllen; i++)
 +		buf[7 + i] = attrs->call[i] << 1;
 +
-+	/* get gps location and copy to buf */
-+	if (attrs->gps != NULL && gps_get_position(&pos, attrs->gps) == 2) {
-+		memcpy(&buf[17], aprs_lat_ntoa(pos.lat), 8);
-+		memcpy(&buf[26], aprs_lon_ntoa(pos.lon), 9);
-+	} else if (attrs->fixed == 2) {
-+		memcpy(&buf[17], aprs_lat_ntoa(attrs->fixed_lat), 8);
-+		memcpy(&buf[26], aprs_lon_ntoa(attrs->fixed_lon), 9);
-+	} else {
-+		return 0;
++	if (attrs->comment != NULL) {
++		commentlen = strlen(attrs->comment);
++		if (commentlen < APRS_MAXLEN - pktlen) { /* TODO: could be less than or equal? went conservative */
++			memcpy(&buf[pktlen], attrs->comment, commentlen);
++			pktlen += commentlen;
++		} else {
++			/* TODO: comment too big */
++			return 0;
++		}
 +	}
 +
-+	return sizeof(hdr);
++	return pktlen;
 +}
 +
 +/*
@@ -329,19 +408,25 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +int
 +aprs_open(char *device)
 +{
-+	int bpf, immediate, iflen;
++	int bpf, yes, iflen;
 +	struct ifreq bound_if;
 +	u_int dlt;
 +
 +	if ((bpf = open("/dev/bpf", O_RDWR)) == -1)
 +		fatal("/dev/bpf failed to open");
 +
++	if (ioctl(bpf, BIOCPROMISC, NULL) == -1)
++		fatal("could not set promiscuous mode");
++
++	yes = 1;
++
 +	/* Set immediate mode to process packets as they arrive. */
-+	immediate = 1;
-+	if (ioctl(bpf, BIOCIMMEDIATE, &immediate) == -1)
++	if (ioctl(bpf, BIOCIMMEDIATE, &yes) == -1)
 +		fatal("failed to set immediate mode");
 +
-+	ioctl(bpf, BIOCSHDRCMPLT, &immediate);
++	/* Set header complete mode to not override source address. */
++	if (ioctl(bpf, BIOCSHDRCMPLT, &yes) == -1)
++		fatal("could not set header complete mode");
 +
 +	/* Bind the network interface. */
 +	iflen = strlen(device);
@@ -368,27 +453,25 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +}
 +
 +static void *
-+aprs_pos_beacon_loop(void *arguments)
++aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 +{
-+	struct aprs_pos_beacon_attrs *attrs = (struct aprs_pos_beacon_attrs *)arguments;
-+	char framebuf[576];
-+	int framelen;
-+	int unslept;
++	char framebuf[APRS_MAXLEN];
++	int i, framelen;
 +
 +	syslog(LOG_DAEMON | LOG_INFO,
-+	    "started up beacon thread (interface %s, callsign: %s)", attrs->device, attrs->call);
++	    "started up beacon loop (interface %s, callsign: %s)", beacons[0]->interface, beacons[0]->call);
 +
 +	for (;;) {
-+		framelen = aprs_pos_compose(framebuf, attrs);
-+		if (write(attrs->bpf, &framebuf, framelen) != framelen) {
-+			syslog(LOG_DAEMON | LOG_EMERG,
-+			    "failed to send ident frame, might want to unplug");
-+			syslog(LOG_DAEMON | LOG_ERR,
-+			    "failure reason: %m");
++		time_t now;
++		time(&now);
++		for (i = 0; i < num_beacons; i++) {
++			if (beacons[i]->next_time <= now) {
++				framelen = aprs_compose(framebuf, beacons[i]);
++				if (write(beacons[i]->bpf, &framebuf, framelen) != framelen)
++					syslog(LOG_DAEMON | LOG_ERR, "failed to send packet: %m");
++				beacons[i]->next_time = time(NULL) + beacons[i]->interval;
++			}
 +		}
-+		unslept = attrs->period;
-+		while (unslept > 0)
-+			unslept = sleep(unslept);
 +	}
 +}
 +
@@ -396,7 +479,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +main(int argc, char **argv)
 +{
 +	struct aprsd_config conf;
-+	struct aprs_pos_beacon_attrs beacon_attrs;
++	struct aprs_beacon_attrs *beacons[20];
 +	int bpf, daemon;
 +	char ch, *conffile, *device;
 +
@@ -444,31 +527,45 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	if (pledge("stdio cpath wpath", NULL) == -1)
 +		fatal("failed to pledge");
 +
-+	if (conf.num_beacons > 0) {
-+		struct beacon_config *bc = conf.beacons[0];
-+		beacon_attrs.period = bc->interval;
-+		if ((bc->flags & BEACONF_POSSET) == BEACONF_POSSET) {
-+			beacon_attrs.fixed = 2;
-+			if (bc->flags & BEACONF_SOUTH) {
-+				beacon_attrs.fixed_lat = 0 - bc->latitude;
-+			} else {
-+				beacon_attrs.fixed_lat = bc->latitude;
-+			}
-+			if (bc->flags & BEACONF_WEST) {
-+				beacon_attrs.fixed_lon = 0 - bc->longitude;
-+			} else {
-+				beacon_attrs.fixed_lon = bc->longitude;
-+			}
-+		} else {
-+			beacon_attrs.fixed = 0;
-+		}
-+		beacon_attrs.gps = bc->sensor;
-+		beacon_attrs.comment = bc->comment;
-+	}
++	if (conf.num_beacons == 0)
++		fatal("refusing to run without beacons defined");
 +
-+	beacon_attrs.call = call;
-+	beacon_attrs.bpf = bpf;
-+	aprs_pos_beacon_loop(&beacon_attrs);
++	for (int ci = 0; ci < conf.num_beacons; ci++) {
++		struct beacon_config *bc = conf.beacons[ci];
++		struct aprs_beacon_attrs *ba = malloc(sizeof(struct aprs_beacon_attrs));
++		beacons[ci] = ba;
++		ba->type = bc->type;
++		switch (ba->type) {
++		case BEACONT_OBJ:
++			ba->name = bc->name;
++			/* fallthrough */
++		case BEACONT_POT:
++		case BEACONT_PON:
++			ba->flags = bc->flags;
++			ba->interval = bc->interval;
++			ba->next_time = time(NULL) + (bc->interval / 2);
++			if ((bc->flags & BEACONF_POSSET) == BEACONF_POSSET) {
++				if (bc->flags & BEACONF_SOUTH) {
++					ba->fixed_lat = 0 - bc->latitude;
++				} else {
++					ba->fixed_lat = bc->latitude;
++				}
++				if (bc->flags & BEACONF_WEST) {
++					ba->fixed_lon = 0 - bc->longitude;
++				} else {
++					ba->fixed_lon = bc->longitude;
++				}
++			}
++			ba->sensor = bc->sensor;
++			ba->comment = bc->comment;
++			ba->call = call;
++			ba->bpf = bpf;
++			break;
++		default:
++			fatal("unknown beacon type");
++		}
++	}
++	aprs_beacon_loop(conf.num_beacons, beacons);
 +}
 Index: src/usr.sbin/aprsd/gps.c
 ===================================================================
@@ -626,7 +723,9 @@ Index: src/usr.sbin/aprsd/aprsd.h
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsd/aprsd.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,35 @@
++
++#define APRS_MAXLEN 256
 +
 +#define BEACONT_PON 1 /* position beacon, no timestamp */
 +#define BEACONT_POT 2 /* position beacon, with timestamp */
@@ -634,7 +733,7 @@ Index: src/usr.sbin/aprsd/aprsd.h
 +
 +#define BEACONF_LATSET	0x01	/* a fixed latitude is defined */
 +#define BEACONF_LONSET	0x02	/* a fixed longitude is defined */
-+#define BEACONF_POSSET (BEACONF_LATSET & BEACONF_LONSET)
++#define BEACONF_POSSET (BEACONF_LATSET | BEACONF_LONSET)
 +#define BEACONF_ALTSET	0x04	/* a fixed altitude is defined */
 +#define BEACONF_SOUTH	0x08	/* the fixed latitude is negative */
 +#define BEACONF_WEST	0x10	/* the fixed longitude in negative */
