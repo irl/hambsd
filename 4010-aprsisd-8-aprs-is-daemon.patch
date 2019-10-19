@@ -71,7 +71,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/aprsisd.c
-@@ -0,0 +1,322 @@
+@@ -0,0 +1,323 @@
 +
 +#include <stdio.h>
 +#include <fcntl.h>
@@ -314,6 +314,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	while ((nr = read(tap, buf, 1500)) != -1 && nr != 0) {
 +		/* TODO: validate? */
 +		ax25_input(buf, nr);
++		bzero(buf, 1500);
 +	}
 +	err(1, "read");
 +}
@@ -381,7 +382,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	char login[100]; /* TODO: guess better */
 +	char *call = read_mycallsign();
 +	int pass = aprsis_pass(call);
-+       	sprintf(login, "user %s-6 pass %d vers aprsisd 0.1dev filter m/800\r\n", call, pass); /* TODO snprinf */
++       	sprintf(login, "user %s-6 pass %d vers aprsisd 0.1dev filter m/50\r\n", call, pass); /* TODO snprinf */
 +
 +	if (write(isd, login, strlen(login)) == -1)
 +		err(1, "write");
