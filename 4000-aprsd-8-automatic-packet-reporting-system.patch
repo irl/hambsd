@@ -107,31 +107,32 @@ Index: src/usr.sbin/aprsd/aprsd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsd/aprsd.c
-@@ -0,0 +1,459 @@
+@@ -0,0 +1,524 @@
 +/*
 + * aprsd - automatic packet reporting system daemon
 + *
 + * Written by Iain R. Learmonth <irl@fsfe.org> for the public domain.
 + */
 +
-+#include <stdio.h>
-+#include <string.h>
-+#include <fcntl.h>
-+#include <unistd.h>
-+#include <stdlib.h>
-+#include <syslog.h>
-+#include <stdarg.h>
-+#include <signal.h>
-+#include <pthread.h>
 +#include <errno.h>
++#include <fcntl.h>
++#include <pthread.h>
++#include <signal.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <syslog.h>
 +#include <time.h>
++#include <unistd.h>
 +
-+#include <sys/queue.h>
-+#include <sys/times.h>
-+#include <sys/time.h>
++#include <sys/event.h>
 +#include <sys/ioctl.h>
-+#include <net/bpf.h>
++#include <sys/queue.h>
 +#include <sys/socket.h>
++#include <sys/time.h>
++#include <sys/times.h>
++#include <net/bpf.h>
 +#include <net/if.h>
 +#include <netinet/in.h>
 +#include <netinet/if_ether.h>
@@ -139,31 +140,39 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +#include "aprsd.h"
 +#include "gps.h"
 +
++struct aprs_interface {
++	int		 ai_fd;		/* file descriptor */
++	int		 ai_rbufsize;	/* receive buffer size */
++	char		*ai_name;
++};
++
 +struct aprs_beacon_attrs {
 +	long long	 fixed_lon;	/* fixed longitude if no GPS */
 +	long long	 fixed_lat;	/* fixed latitude if no GPS */
 +	time_t		 next_time;	/* next beacon time */
-+	int		 bpf;		/* bpf file handle; TODO: look this up instead */
 +	int		 interval;	/* beacon period */
 +	int		 flags;		/* aprsd.h: BEACONF_* */
 +	int		 type;		/* aprsd.h: BEACONT_* */
 +	char		*call;		/* callsign as ascii text */
 +	char		*comment;	/* comment text */
 +	char		*name;		/* object/item name */
-+	char		*interface;	/* interface name */
 +	char		*sensor;	/* gps sensor name (e.g. nmea0) */
 +};
 +
-+static __dead void	 fatal(char *);
-+static __dead void	 usage(void);
-+static void		 signal_handler(int);
-+static char 		*aprs_lat_ntoa(long long);
-+static char 		*aprs_lon_ntoa(long long);
-+static char		*read_mycallsign(void);
-+static int		 aprs_compose(char *, struct aprs_beacon_attrs *);
-+static int		 aprs_open(char *);
-+static void		 daemonize();
-+static void		*aprs_beacon_loop(int, struct aprs_beacon_attrs *[]);
++static __dead void		 fatal(char *);
++static __dead void		 usage(void);
++static void			 signal_handler(int);
++static char 			*aprs_lat_ntoa(long long);
++static char 			*aprs_lon_ntoa(long long);
++static char			*read_mycallsign(void);
++static struct aprs_interface	*aprs_lookup_interface(int);
++static int			 aprs_compose(char *, struct aprs_beacon_attrs *);
++static struct aprs_interface	*aprs_open(char *);
++static void			 daemonize();
++static void			*aprs_beacon_loop(int, struct aprs_beacon_attrs *[]);
++
++struct aprs_interface *aifs[20];
++int naifs = 0;
 +
 +static __dead void
 +fatal(char* msg)
@@ -178,7 +187,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +{
 +	extern char *__progname;
 +
-+	fprintf(stderr, "usage: %s [-D] [-i interface] [-p period]\n",
++	fprintf(stderr, "usage: %s [-D] [-f file] [if0 [... ifN]]\n",
 +	    __progname);
 +	exit(1);
 +}
@@ -276,46 +285,56 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	fatal("could not read callsign from /etc/mycallsign");
 +}
 +
++static struct aprs_interface *
++aprs_lookup_interface(int fd)
++{
++	int i;
++	for (i = 0; i < naifs; i++)
++		if (aifs[i]->ai_fd == fd)
++			return aifs[i];
++	return NULL;
++}
++
 +static const char pon_hdr[] = {
-+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
-+	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,                         // source
-+	0x03,                                                             // ui frame
-+	0xf0,                                                             // no layer 3
-+	'!',                                                              // position report, no timestamp
-+	0, 0, 0, 0, 0, 0, 0, 0,                                           // latitude
-+	'/',                                                              // table
-+	0, 0, 0, 0, 0, 0, 0, 0, 0,                                        // longitude
-+	'/',                                                              // symbol
++	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, /* destination */
++	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	/* source */
++	0x03,						/* ui frame */
++	0xf0,						/* no layer 3 */
++	'!',						/* position report, no timestamp */
++	0, 0, 0, 0, 0, 0, 0, 0,				/* latitude */
++	'/',						/* table */
++	0, 0, 0, 0, 0, 0, 0, 0, 0,			/* longitude */
++	'/',						/* symbol */
 +};
 +static const int pon_hdr_size = sizeof(pon_hdr);
 +
 +static const char pot_hdr[] = {
-+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
-+	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	// source
-+	0x03,						// ui frame
-+	0xf0,						// no layer 3
-+	'/',						// position report, with timestamp
-+	0, 0, 0, 0, 0, 0, 'z',				// timestamp
-+	0, 0, 0, 0, 0, 0, 0, 0,				// latitude
-+	'/',						// symbol table
-+	0, 0, 0, 0, 0, 0, 0, 0, 0,			// longitude
-+	'/',						// symbol
++	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, /* destination */
++	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	/* source */
++	0x03,						/* ui frame */
++	0xf0,						/* no layer 3 */
++	'/',						/* position report, with timestamp */
++	0, 0, 0, 0, 0, 0, 'z',				/* timestamp */
++	0, 0, 0, 0, 0, 0, 0, 0,				/* latitude */
++	'/',						/* symbol table */
++	0, 0, 0, 0, 0, 0, 0, 0, 0,			/* longitude */
++	'/',						/* symbol */
 +};
 +static const int pot_hdr_size = sizeof(pot_hdr);
 +
 +static const char obj_hdr[] = {
-+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, // destination
-+	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	// source
-+	0x03,						// ui frame
-+	0xf0,						// no layer 3
-+	';',						// object report
-+	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',	// object name
-+	'_',						// object live
-+	0, 0, 0, 0, 0, 0, 'z',				// timestamp
-+	0, 0, 0, 0, 0, 0, 0, 0,				// latitude
-+	'/',						// symbol table
-+	0, 0, 0, 0, 0, 0, 0, 0, 0,			// longitude
-+	'/'						// symbol
++	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, /* destination */
++	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	/* source */
++	0x03,						/* ui frame */
++	0xf0,						/* no layer 3 */
++	';',						/* object report */
++	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',	/* object name */
++	'_',						/* object live */
++	0, 0, 0, 0, 0, 0, 'z',				/* timestamp */
++	0, 0, 0, 0, 0, 0, 0, 0,				/* latitude */
++	'/',						/* symbol table */
++	0, 0, 0, 0, 0, 0, 0, 0, 0,			/* longitude */
++	'/'						/* symbol */
 +};
 +static const int obj_hdr_size = sizeof(obj_hdr);
 +
@@ -405,27 +424,28 @@ Index: src/usr.sbin/aprsd/aprsd.c
 + * Open a BPF file and attach it to the interface named 'device'.
 + * Set immediate mode.
 + */
-+int
++struct aprs_interface *
 +aprs_open(char *device)
 +{
-+	int bpf, yes, iflen;
++	int iflen, yes;
 +	struct ifreq bound_if;
 +	u_int dlt;
++	struct aprs_interface *aif;
 +
-+	if ((bpf = open("/dev/bpf", O_RDWR)) == -1)
++	aif = malloc(sizeof(struct aprs_interface));
++	aif->ai_name = device;
++
++	if ((aif->ai_fd = open("/dev/bpf", O_RDWR)) == -1)
 +		fatal("/dev/bpf failed to open");
-+
-+	if (ioctl(bpf, BIOCPROMISC, NULL) == -1)
-+		fatal("could not set promiscuous mode");
 +
 +	yes = 1;
 +
 +	/* Set immediate mode to process packets as they arrive. */
-+	if (ioctl(bpf, BIOCIMMEDIATE, &yes) == -1)
++	if (ioctl(aif->ai_fd, BIOCIMMEDIATE, &yes) == -1)
 +		fatal("failed to set immediate mode");
 +
 +	/* Set header complete mode to not override source address. */
-+	if (ioctl(bpf, BIOCSHDRCMPLT, &yes) == -1)
++	if (ioctl(aif->ai_fd, BIOCSHDRCMPLT, &yes) == -1)
 +		fatal("could not set header complete mode");
 +
 +	/* Bind the network interface. */
@@ -433,10 +453,16 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	if (strlcpy(bound_if.ifr_name, device, sizeof(bound_if.ifr_name))
 +	    < iflen)
 +		fatal("interface name too long");
-+	if(ioctl(bpf, BIOCSETIF, (caddr_t)&bound_if) == -1)
++	if (ioctl(aif->ai_fd, BIOCSETIF, (caddr_t)&bound_if) == -1)
 +		fatal("could not bind to interface");
 +
-+	return bpf;
++	if (ioctl(aif->ai_fd, BIOCGBLEN, (caddr_t)&aif->ai_rbufsize) == -1)
++		fatal("failed to get buffer size for bpf");
++
++	if (ioctl(aif->ai_fd, BIOCPROMISC, NULL) == -1)
++		fatal("could not set promiscuous mode");
++
++	return aif;
 +}
 +
 +static void
@@ -452,27 +478,66 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	signal(SIGTERM, signal_handler); /* catch kill signal */
 +}
 +
++void
++aprs_digipeat(char* pkt, int pktlen, struct aprs_interface *src)
++{
++	write(aifs[0]->ai_fd, pkt, pktlen);
++	/* TODO: so much error handling */
++}
++
 +static void *
 +aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 +{
-+	char framebuf[APRS_MAXLEN];
-+	int i, framelen;
++	struct kevent chlist[10];
++	struct kevent evlist[10];
++	char framebuf[9000];
++	int bi, ii, evi, framelen, kq, nev;
++	struct aprs_interface *aif;
++
++	if ((kq = kqueue()) == -1)
++		fatal("failed to create kqueue");
++
++	EV_SET(&chlist[0], 1, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, 1000, 0);
++
++	for (ii = 0; ii < naifs; ii++)
++		EV_SET(&chlist[ii + 1], aifs[ii]->ai_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
 +
 +	syslog(LOG_DAEMON | LOG_INFO,
-+	    "started up beacon loop (interface %s, callsign: %s)", beacons[0]->interface, beacons[0]->call);
++	    "started up beacon loop (callsign: %s)", beacons[0]->call);
 +
-+	for (;;) {
-+		time_t now;
-+		time(&now);
-+		for (i = 0; i < num_beacons; i++) {
-+			if (beacons[i]->next_time <= now) {
-+				framelen = aprs_compose(framebuf, beacons[i]);
-+				if (write(beacons[i]->bpf, &framebuf, framelen) != framelen)
-+					syslog(LOG_DAEMON | LOG_ERR, "failed to send packet: %m");
-+				beacons[i]->next_time = time(NULL) + beacons[i]->interval;
++	while ((nev = kevent(kq, chlist, naifs + 1, evlist, naifs + 1, NULL)) > 0) {
++		printf("there are %d events\n", nev);
++		for (evi = 0; evi < nev; evi++) {
++			if (evlist[evi].filter != EVFILT_TIMER) {
++				char *bp, *ep;
++				aif = aprs_lookup_interface(evlist[evi].ident);
++				bi = read(aif->ai_fd, framebuf, aif->ai_rbufsize);
++				if (aif != aifs[0]) {
++					printf("going to repeat!\n");
++					bp = framebuf;
++					ep = bp + bi;
++					while (bp < ep) {
++#define caplen ((struct bpf_hdr *)bp)->bh_caplen
++#define hdrlen ((struct bpf_hdr *)bp)->bh_hdrlen
++						aprs_digipeat(bp + hdrlen, caplen, aif);
++						bp += BPF_WORDALIGN(hdrlen + caplen);
++					}
++				}
++				continue;
++			}
++			time_t now;
++			time(&now);
++			for (bi = 0; bi < num_beacons; bi++) {
++				if (beacons[bi]->next_time <= now) {
++					framelen = aprs_compose(framebuf, beacons[bi]);
++					if (write(aifs[0]->ai_fd, &framebuf, framelen) != framelen)
++						syslog(LOG_DAEMON | LOG_ERR, "failed to send packet: %m");
++					beacons[bi]->next_time = now + beacons[bi]->interval;
++				}
 +			}
 +		}
 +	}
++	fatal("kevent");
 +}
 +
 +int
@@ -480,7 +545,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +{
 +	struct aprsd_config conf;
 +	struct aprs_beacon_attrs *beacons[20];
-+	int bpf, daemon;
++	int daemon;
 +	char ch, *conffile, *device;
 +
 +	conf.num_beacons = 0;
@@ -520,7 +585,8 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	if (daemon)
 +		daemonize();
 +
-+	bpf = aprs_open(device);
++	for (naifs = 0; naifs < argc; naifs++)
++		aifs[naifs] = aprs_open(argv[naifs]);
 +
 +	if (unveil(NULL, NULL) == -1)
 +		fatal("failed to unveil");
@@ -559,7 +625,6 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +			ba->sensor = bc->sensor;
 +			ba->comment = bc->comment;
 +			ba->call = call;
-+			ba->bpf = bpf;
 +			break;
 +		default:
 +			fatal("unknown beacon type");
