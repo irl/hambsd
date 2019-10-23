@@ -6,7 +6,7 @@ Index: src/usr.sbin/aprsisd/Makefile
 +#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
 +
 +PROG=	aprsisd
-+SRCS=	aprsisd.c
++SRCS=	aprsisd.c ax25.c
 +MAN=	aprsisd.8
 +
 +LDFLAGS= -lpthread
@@ -71,7 +71,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/aprsisd.c
-@@ -0,0 +1,323 @@
+@@ -0,0 +1,292 @@
 +
 +#include <stdio.h>
 +#include <fcntl.h>
@@ -90,6 +90,8 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +#include <netinet/in.h>
 +#include <netinet/tcp.h>
 +#include <arpa/inet.h>
++
++#include "ax25.h"
 +
 +#define SOFTWARE_NAME "aprsisd"
 +#define SOFTWARE_VERSION "0.1"
@@ -110,31 +112,11 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 + * http://www.aprs-is.net/Connecting.aspx
 + */
 +
-+#define AX25ADDR_LASTCALL 0x01
-+#define AX25ADDR_RESERVED (0x20 | 0x40)
-+#define AX25ADDR_CR       0x80
-+
-+#define AX25_MAXDIGIS 8
-+
 +#define TNC2_MAXLINE 512
-+
-+struct ax25_address {
-+	unsigned char		ax25_call[7];
-+};
-+
-+struct sockaddr_ax25 {
-+	u_int8_t		sax_len;
-+	sa_family_t		sax_family;
-+	struct ax25_address	sax_addr;
-+	int8_t			sax_pathlen;
-+	struct ax25_address	sax_path[AX25_MAXDIGIS];
-+};
 +
 +int isd, tap;
 +
 +int aprsis_pass(char *);
-+char *ax25_ntoa(struct ax25_address *);
-+struct ax25_address *ax25_aton(char *);
 +void ax25_input(char *, int);
 +void ax25_output(char *, int);
 +char *tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
@@ -181,61 +163,6 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	return hash;
 +}
 +
-+char *
-+ax25_ntoa(struct ax25_address *axp)
-+{
-+	static char buf[10];
-+	int i, ssid;
-+	ssid = (axp->ax25_call[6] & 0b00011110) >> 1;
-+	bzero(buf, 10);
-+	for (i = 0; i < 6; i++) {
-+		if (axp->ax25_call[i] == 0x40)
-+			break;
-+		buf[i] = axp->ax25_call[i] >> 1;
-+	}
-+	if (ssid == 0) {
-+		buf[i] = '\0';
-+	} else {
-+		sprintf(&buf[i], "-%d", ssid);
-+	}
-+	return buf;
-+}
-+
-+struct ax25_address *
-+ax25_aton(char *s)
-+{
-+	static struct ax25_address ax;
-+	char ssid[3];
-+	int i;
-+	memcpy(&ax, "\x40\x40\x40\x40\x40\x40\x00", sizeof(struct ax25_address));
-+	for (i = 0; ; i++) {
-+		if (s[i] == '\0' || s[i] == '>' || s[i] == ',' || s[i] == ':') {
-+			ax.ax25_call[6] = 0;
-+			break;
-+		}
-+		if (s[i] == '-') {
-+			if (isdigit(s[++i])) {
-+				bzero(ssid, 3);
-+				ssid[0] = s[i];
-+				if (isdigit(s[++i]))
-+					ssid[1] = s[i];
-+				ax.ax25_call[6] = ((u_int8_t)atoi(ssid)) << 1;
-+				if ((ax.ax25_call[6] & 0b11100001) != 0) {
-+					/* non AX.25 SSID */
-+					return NULL;
-+				}
-+				break;
-+			} else {
-+				/* callsign is malformed */
-+				return NULL;
-+			}
-+		}
-+		ax.ax25_call[i] = s[i] << 1;
-+	}
-+	ax.ax25_call[6] |= AX25ADDR_RESERVED;
-+	return &ax;
-+}
-+
 +/*
 + * TODO: things get really messed up if the packet buf isn't null terminated!!!!
 + */
@@ -243,9 +170,19 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +ax25_input(char *pkt, int len)
 +{
 +	char dst[10], src[10], tl[TNC2_MAXLINE];
-+	strlcpy(dst, ax25_ntoa((struct ax25_address *)&pkt[7]), 10);
-+	strlcpy(src, ax25_ntoa((struct ax25_address *)&pkt[0]), 10);
-+	snprintf(tl, TNC2_MAXLINE, "%s>%s:%s\n", dst, src, &pkt[16]);
++	int dn;
++	strlcpy(dst, ax25_ntoa((struct ax25_address *)&pkt[0]), 10);
++	strlcpy(src, ax25_ntoa((struct ax25_address *)&pkt[7]), 10);
++	snprintf(tl, TNC2_MAXLINE, "%s>%s", src, dst);
++	for (dn = 0; dn < AX25_MAXDIGIS; ++dn) {
++		if (pkt[(7 * (dn + 1)) + 6] & AX25ADDR_LASTCALL)
++			break;
++		strlcat(tl, ",", TNC2_MAXLINE);
++		strlcat(tl, ax25_ntoa((struct ax25_address *)&pkt[7 * (dn + 2)]), TNC2_MAXLINE);
++	}
++	strlcat(tl, ":", TNC2_MAXLINE);
++	strlcat(tl, &pkt[7 * (dn + 2) + 2], TNC2_MAXLINE);
++	strlcat(tl, "\n", TNC2_MAXLINE);
 +	tnc2_output(tl);
 +}
 +
@@ -260,21 +197,52 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +tnc2_hdr_to_ax25(struct sockaddr_ax25 *saddr, struct sockaddr_ax25 *daddr,
 +    char *s)
 +{
++	char as[10];
 +	struct ax25_address *addr;
-+	char* cp;
++	int dn, h;
++	char *bp, *ep, *pp;
 +
-+	if ((addr = ax25_aton(s)) == NULL)
++	if ((pp = strchr(s, ':')) == NULL)
 +		return NULL;
-+	memcpy(&saddr->sax_addr, addr, sizeof(struct ax25_address));
-+	cp = strchr(s, '>') + 1;
-+	if ((addr = ax25_aton(cp)) == NULL)
-+		return NULL;
-+	memcpy(&daddr->sax_addr, addr, sizeof(struct ax25_address));
-+	/* TODO: extract path too */
-+	saddr->sax_pathlen = 0;
-+	saddr->sax_addr.ax25_call[6] |= AX25ADDR_LASTCALL;
-+	daddr->sax_addr.ax25_call[6] |= AX25ADDR_CR;
-+	return strchr(s, ':') + 1;
++	bp = ep = s;
++	for (dn = -2 ; ep != pp && dn < AX25_MAXDIGIS ; dn++) {
++		for (ep = bp; ep < pp; ep++)
++			if (*ep == '>' || *ep == ',')
++				break;
++		bzero(as, 10);
++		if (ep - bp < 3 || ep - bp > 9)
++			return NULL;
++		memcpy(as, bp, ep - bp);
++		if ((h = (as[ep - bp - 1] == '*')))
++			as[ep - bp - 1] = '\0';
++		if ((addr = ax25_aton(as)) == NULL)
++			return NULL;
++		if (h)
++			saddr->sax_path[dn].ax25_call[6] |= AX25ADDR_CR;
++		switch (dn) {
++		case -2:
++			/* source address */
++			memcpy(&saddr->sax_addr, addr, sizeof(struct ax25_address));
++			break;
++		case -1:
++			/* destination address */
++			memcpy(&daddr->sax_addr, addr, sizeof(struct ax25_address));
++			daddr->sax_addr.ax25_call[6] |= AX25ADDR_CR;
++			break;
++		default:
++			/* digi path */
++			memcpy(&saddr->sax_path[dn], addr, sizeof(struct ax25_address));
++			break;
++		}
++		bp = ep + 1;
++	}
++	if (dn == 0) {
++		saddr->sax_addr.ax25_call[6] |= AX25ADDR_LASTCALL;
++	} else {
++		saddr->sax_path[dn - 1].ax25_call[6] |= AX25ADDR_LASTCALL;
++	}
++	saddr->sax_pathlen = dn;
++	return pp + 1;
 +}
 +
 +void
@@ -282,15 +250,16 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +{
 +	char pkt[1024], *payload;
 +	struct sockaddr_ax25 saddr, daddr;
-+	int len;
++	int dn, len;
 +	if ((payload = tnc2_hdr_to_ax25(&saddr, &daddr, s)) == NULL)
 +		return;
 +	memcpy(pkt, &daddr.sax_addr, sizeof(struct ax25_address));
 +	memcpy(&pkt[7], &saddr.sax_addr, sizeof(struct ax25_address));
-+	pkt[14] = 0x03;
-+	pkt[15] = 0xf0;
-+	/* TODO: unpack path from saddr */
-+	len = 16 + strlcpy(&pkt[16], payload, 1024 - 16);
++	for (dn = 0; dn < saddr.sax_pathlen; dn++)
++		memcpy(&pkt[14 + (7 * dn)], &saddr.sax_path[dn], sizeof(struct ax25_address));
++	pkt[14 + (7 * dn)] = 0x03;
++	pkt[15 + (7 * dn)] = 0xf0;
++	len = 16 + (7 * dn) + strlcpy(&pkt[16 + (7 * dn)], payload, 1024 - 16);
 +	ax25_output(pkt, len);
 +}
 +
@@ -298,13 +267,13 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +tnc2_output(char *s)
 +{
 +	int len = strlen(s);
-+	printf("snd: %s\n", s);
++	printf("snd: %s", s);
 +	if (write(isd, s, len) == -1)
 +		err(1, "tnc2_output: write");
 +}
 +
 +void *
-+aprsis_input_loop(void *arguments)
++local_input_loop(void *arguments)
 +{
 +	char buf[1500];
 +	int nr;
@@ -316,11 +285,11 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +		ax25_input(buf, nr);
 +		bzero(buf, 1500);
 +	}
-+	err(1, "read");
++	err(1, "read tap");
 +}
 +
 +void *
-+local_input_loop(void *arguments)
++aprsis_input_loop(void *arguments)
 +{
 +	char buf[TNC2_MAXLINE];
 +	int ei, pos, nr;
@@ -345,7 +314,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +			pos -= ei;
 +		}
 +	}
-+	err(1, "read");
++	err(1, "read tcp");
 +}
 +
 +int
@@ -382,7 +351,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	char login[100]; /* TODO: guess better */
 +	char *call = read_mycallsign();
 +	int pass = aprsis_pass(call);
-+       	sprintf(login, "user %s-6 pass %d vers aprsisd 0.1dev filter m/50\r\n", call, pass); /* TODO snprinf */
++       	sprintf(login, "user %s-6 pass %d vers aprsisd 0.1dev filter m/500\r\n", call, pass); /* TODO snprinf */
 +
 +	if (write(isd, login, strlen(login)) == -1)
 +		err(1, "write");
@@ -395,3 +364,99 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +
 +	while(1);
 +}
+Index: src/usr.sbin/aprsisd/ax25.c
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsisd/ax25.c
+@@ -0,0 +1,65 @@
++#include <ctype.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <strings.h>
++
++#include <sys/types.h>
++#include <netinet/in.h>
++
++#include "ax25.h"
++
++char *
++ax25_ntoa(struct ax25_address *axp)
++{
++	static char buf[10];
++	int i, ssid;
++	ssid = (axp->ax25_call[6] & 0b00011110) >> 1;
++	bzero(buf, 10);
++	for (i = 0; i < 6; i++) {
++		if (axp->ax25_call[i] == 0x40)
++			break;
++		buf[i] = axp->ax25_call[i] >> 1;
++	}
++	if (ssid == 0) {
++		buf[i] = '\0';
++	} else {
++		sprintf(&buf[i], "-%d", ssid);
++	}
++	return buf;
++}
++
++struct ax25_address *
++ax25_aton(char *s)
++{
++	static struct ax25_address ax;
++	char ssid[3];
++	int i;
++	memcpy(&ax, "\x40\x40\x40\x40\x40\x40\x00", sizeof(struct ax25_address));
++	for (i = 0; ; i++) {
++		if (s[i] == '\0') {
++			ax.ax25_call[6] = 0;
++			break;
++		}
++		if (s[i] == '-') {
++			if (isdigit(s[++i])) {
++				bzero(ssid, 3);
++				ssid[0] = s[i];
++				if (isdigit(s[++i]))
++					ssid[1] = s[i];
++				ax.ax25_call[6] = atoi(ssid) << 1;
++				if ((ax.ax25_call[6] & 0b11100001) != 0) {
++					/* non AX.25 SSID */
++					return NULL;
++				}
++				break;
++			} else {
++				/* callsign is malformed */
++				return NULL;
++			}
++		}
++		ax.ax25_call[i] = s[i] << 1;
++	}
++	ax.ax25_call[6] |= AX25ADDR_RESERVED;
++	return &ax;
++}
+Index: src/usr.sbin/aprsisd/ax25.h
+===================================================================
+--- /dev/null
++++ src/usr.sbin/aprsisd/ax25.h
+@@ -0,0 +1,21 @@
++
++#define AX25ADDR_LASTCALL 0x01
++#define AX25ADDR_RESERVED (0x20 | 0x40)
++#define AX25ADDR_CR       0x80
++
++#define AX25_MAXDIGIS 8
++
++struct ax25_address {
++	unsigned char		ax25_call[7];
++};
++
++struct sockaddr_ax25 {
++	u_int8_t		sax_len;
++	sa_family_t		sax_family;
++	struct ax25_address	sax_addr;
++	int8_t			sax_pathlen;
++	struct ax25_address	sax_path[AX25_MAXDIGIS];
++};
++
++char *ax25_ntoa(struct ax25_address *);
++struct ax25_address *ax25_aton(char *);
