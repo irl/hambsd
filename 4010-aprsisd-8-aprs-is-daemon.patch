@@ -69,21 +69,25 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/aprsisd.c
-@@ -0,0 +1,322 @@
+@@ -0,0 +1,417 @@
 +
-+#include <stdio.h>
-+#include <fcntl.h>
-+#include <err.h>
-+#include <string.h>
-+#include <unistd.h>
-+#include <stdlib.h>
 +#include <ctype.h>
++#include <err.h>
++#include <fcntl.h>
++#include <netdb.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <syslog.h>
++#include <unistd.h>
 +
-+#include <sys/types.h>
++#include <sys/event.h>
 +#include <sys/ioctl.h>
++#include <sys/limits.h>
 +#include <sys/socket.h>
 +#include <sys/time.h>
-+#include <sys/event.h>
++#include <sys/types.h>
 +#include <net/if.h>
 +#include <net/if_tun.h>
 +#include <netinet/in.h>
@@ -91,20 +95,6 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +#include <arpa/inet.h>
 +
 +#include "ax25.h"
-+
-+#define SOFTWARE_NAME "aprsisd"
-+#define SOFTWARE_VERSION "0.1"
-+
-+#define ADDRESS "85.90.180.26"
-+#define PORT 14580
-+
-+/*
-+ * TODO:
-+ *
-+ * - don't hardcode the server to use
-+ * - really check the callsign is valid
-+ * - extract paths
-+ */
 +
 +/*
 + * Much of the APRS-IS protocol has been based on the details found at:
@@ -115,16 +105,30 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +
 +int isd, tap;
 +
-+int aprsis_pass(char *);
-+void ax25_input(char *, int);
-+void ax25_output(char *, int);
-+char *tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
-+void tnc2_input(char *);
-+void tnc2_output(char *);
-+void aprsis_remote_open(char *, int, char *, int, int, char *);
-+void aprsis_local_open(char *);
-+void aprsis_loop(void);
++static __dead void usage(void);
++static char *read_mycallsign(void);
++static char *aprsis_pass(char *);
++static int ax25_input(char *, int);
++static void ax25_output(char *, int);
++static char *tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
++static void tnc2_input(char *);
++static int tnc2_output(char *);
++static void aprsis_login_str(char *, char *, char *, char *, char *);
++static void aprsis_remote_open(char *, char *, char *, char *, char *, char *);
++static void aprsis_local_open(char *);
++static int aprsis_local_shuffle(char *, char *, int);
++static void aprsis_loop(void);
 +int main(int, char **);
++
++static __dead void
++usage(void)
++{
++	extern char *__progname;
++
++	fprintf(stderr, "usage: %s [-D] [-s] [-p passcode] [server [port]]\n",
++	    __progname);
++	exit(1);
++}
 +
 +static char *
 +read_mycallsign(void)
@@ -137,20 +141,22 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	call = NULL;
 +
 +	if ((mcp = fopen("/etc/mycallsign", "r")) == NULL)
-+		err(1, "fopen"); //fatal("could not open /etc/mycallsign");
++		err(1, "fopen");
 +	if ((calllen = getline(&call, &callsize, mcp)) != -1) {
 +		if ((nl = strchr(call, '\n')) != NULL)
 +			nl[0] = '\0';
 +		return call;
 +	}
-+	err(1, "getline"); //fatal("could not read callsign from /etc/mycallsign");
++	err(1, "getline");
 +}
 +
-+int
++static char *
 +aprsis_pass(char *call)
 +{
++	static char pass[6];
 +	char *cp, *ep;
 +	int16_t hash;
++
 +	cp = call;
 +	if ((ep = strchr(call, '-')) == NULL)
 +		ep = cp + strlen(call);
@@ -161,13 +167,14 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +		if (cp < ep)
 +			hash ^= (*(cp++));
 +	}
-+	return hash;
++	snprintf(pass, 6, "%d", hash);
++	return pass;
 +}
 +
 +/*
 + * TODO: things get really messed up if the packet buf isn't null terminated!!!!
 + */
-+void
++static int
 +ax25_input(char *pkt, int len)
 +{
 +	char dst[10], src[10], tl[TNC2_MAXLINE];
@@ -184,17 +191,17 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	strlcat(tl, ":", TNC2_MAXLINE);
 +	strlcat(tl, &pkt[7 * (dn + 2) + 2], TNC2_MAXLINE);
 +	strlcat(tl, "\n", TNC2_MAXLINE);
-+	tnc2_output(tl);
++	return tnc2_output(tl);
 +}
 +
-+void
++static void
 +ax25_output(char *pkt, int len)
 +{
 +	if (write(tap, pkt, len) == -1)
 +		err(1, "ax25_output: write");
 +}
 +
-+char *
++static char *
 +tnc2_hdr_to_ax25(struct sockaddr_ax25 *saddr, struct sockaddr_ax25 *daddr,
 +    char *s)
 +{
@@ -246,7 +253,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	return pp + 1;
 +}
 +
-+void
++static void
 +tnc2_input(char *s)
 +{
 +	char pkt[1024], *payload;
@@ -264,48 +271,97 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	ax25_output(pkt, len);
 +}
 +
-+void
++static int
 +tnc2_output(char *s)
 +{
 +	int len = strlen(s);
 +	printf("snd: %s", s);
-+	if (write(isd, s, len) == -1)
-+		err(1, "tnc2_output: write");
++	return write(isd, s, len);
 +}
 +
-+void
-+aprsis_remote_open(char *server, int port, char *call, int ssid, int pass,
++static void *
++get_in_addr(struct sockaddr *sa)
++{
++	if (sa->sa_family == AF_INET)
++		return &(((struct sockaddr_in*)sa)->sin_addr);
++	return &(((struct sockaddr_in6*)sa)->sin6_addr);
++}
++
++static void
++aprsis_login_str(char *login, char *call, char *ssid, char *pass, char *filter)
++{
++	memset(login, 0, 512);
++	strlcpy(login, "user ", 512);
++	strlcat(login, call, 512);
++	if (strcmp(ssid, "0") != 0) {
++		strlcat(login, "-", 512);
++		strlcat(login, ssid, 512);
++	}
++	strlcat(login, " pass ", 512);
++	strlcat(login, pass, 512);
++	strlcat(login, " vers HamBSD-aprsisd 0.0-dev", 512);
++	if (filter != NULL) {
++		strlcat(login, " filter ", 512);
++		strlcat(login, filter, 512);
++	}
++	strlcat(login, "\n", 512);
++}
++
++static void
++aprsis_remote_open(char *server, char *port, char *call, char *ssid, char *pass,
 +    char *filter)
 +{
-+	struct sockaddr_in addr;
-+	int nodelay;
-+	char login[512];
++	struct addrinfo hints, *servinfo, *p;
++	int nodelay, rv;
++	char *login, as[INET6_ADDRSTRLEN];
 +
-+	if ((isd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-+		err(1, "socket");
++	memset(&hints, 0, sizeof hints);
++	hints.ai_family = AF_UNSPEC;
++	hints.ai_socktype = SOCK_STREAM;
++
++	if ((rv = getaddrinfo(server, port, &hints, &servinfo)) != 0) {
++		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
++		exit(1); /* TODO */
 +	}
 +
-+	addr.sin_port = htons(PORT);
-+	addr.sin_family = AF_INET;
++	for (p = servinfo; p != NULL; p = p->ai_next) {
++		if ((isd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
++			syslog(LOG_DAEMON | LOG_WARNING, "socket: %m");
++			continue;
++		}
++		if (connect(isd, p->ai_addr, p->ai_addrlen) == -1) {
++			close(isd);
++			syslog(LOG_DAEMON | LOG_WARNING, "connect: %m");
++			continue;
++		}
++		break;
++	}
 +
-+	inet_pton(AF_INET, ADDRESS, &addr.sin_addr);
-+
-+	if (connect(isd, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1) {
++	if (p == NULL)
 +		err(1, "connect");
-+	}
 +
 +	nodelay = 1;
 +	setsockopt(isd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 +
-+	if (pass == 1234567890)
++	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), as, sizeof(as));
++	syslog(LOG_DAEMON | LOG_INFO, "connected to %s", as);
++
++	freeaddrinfo(servinfo);
++
++	if (strcmp(pass, "please") == 0)
 +		pass = aprsis_pass(call);
-+	snprintf(login, 512, "user %s-%d pass %d vers aprsisd 0.0-dev filter %s\r\n",
-+	    call, ssid, pass, filter);
++	login = malloc(512);
++	aprsis_login_str(login, call, ssid, pass, filter);
 +	if (write(isd, login, strlen(login)) == -1)
 +		err(1, "write");
++
++	free(login);
++
++	syslog(LOG_INFO | LOG_DAEMON, "connected to %s", as);
 +}
 +
-+void aprsis_local_open(char *interface)
++static void
++aprsis_local_open(char *interface)
 +{
 +	struct tuninfo ti;
 +	tap = open(interface, O_RDWR);
@@ -320,8 +376,8 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 + * remaining data in the buffer gets shuffled to the front and the
 + * new position in the buffer is returned.
 + */
-+int
-+aprsis_local_shuffle(char *buf, char* ep, int pos)
++static int
++aprsis_local_shuffle(char *buf, char *ep, int pos)
 +{
 +	int ei = ep - buf;
 +	if (buf[ei - 1] == '\r')
@@ -336,7 +392,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	return pos;
 +}
 +
-+void
++static void
 +aprsis_loop(void)
 +{
 +	struct kevent chlist[2];
@@ -360,10 +416,13 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +				if ((l_nr = read(tap, l_buf, 1500)) == -1 || l_nr == 0)
 +					err(1, "read tap");
 +				/* TODO: validate? */
-+				ax25_input(l_buf, l_nr);
++				if (ax25_input(l_buf, l_nr) == -1)
++					return;
++				bzero(l_buf, 1500);
 +			} else if (evlist[evi].ident == isd) {
-+				if (((r_nr = read(isd, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || r_nr == 0)
-+					err(1, "read tcp");
++				if (((r_nr = read(isd, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || r_nr == 0) {
++					return;
++				}
 +				r_pos += r_nr;
 +				if ((r_ep = strchr(r_buf, '\n')) != NULL)
 +					r_pos = aprsis_local_shuffle(r_buf, r_ep, r_pos);
@@ -375,22 +434,58 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +int
 +main(int argc, char **argv)
 +{
-+	char *call, *filter;
-+	int isd, pass;
++	char *call, ch, *filter, *pass, *port, *server, *ssid;
++	const char *errstr;
++	int isd;
 +
 +	call = read_mycallsign();
-+	pass = 1234567890;
-+	filter = "m/500";
++	ssid = "0";
++	pass = "-1";
++	filter = NULL;
++	server = "rotate.aprs2.net";
++	port = "14580";
 +
-+	aprsis_remote_open(ADDRESS, PORT, call, 6, pass, filter);
++	while ((ch = getopt(argc, argv, "s:p:f:")) != -1) {
++		switch (ch) {
++		case 's':
++			strtonum(optarg, 0, 15, &errstr);
++			if (errstr) {
++				warnx("SSID is %s: %s", errstr, optarg);
++				usage();
++			}
++			ssid = optarg;
++			break;
++		case 'p':
++			pass = optarg;
++			break;
++		case 'f':
++			filter = optarg;
++			break;
++		default:
++			usage();
++		}
++	}
++	argc -= optind;
++	argv += optind;
++
++	if (argc > 0)
++		server = argv[0];
++	if (argc > 1)
++		port = argv[1];
++
 +	aprsis_local_open("/dev/axtap0");
 +
 +	if (unveil(NULL, NULL) == -1)
 +		err(1, "unveil");
-+	if (pledge("stdio", NULL) == -1)
++	if (pledge("stdio inet rpath dns", NULL) == -1)
 +		err(1, "pledge");
 +
-+	aprsis_loop();
++	for (;;) {
++		aprsis_remote_open(server, port, call, ssid, pass, filter);
++		aprsis_loop();
++		syslog(LOG_DAEMON | LOG_INFO, "reconnecting in 30 seconds...");
++		sleep(30);
++	}
 +}
 Index: src/usr.sbin/aprsisd/ax25.c
 ===================================================================
@@ -459,7 +554,7 @@ Index: src/usr.sbin/aprsisd/ax25.c
 +				return NULL;
 +			}
 +		}
-+		ax.ax25_call[i] = s[i] << 1;
++		ax.ax25_call[i] = toupper(s[i]) << 1;
 +	}
 +	ax.ax25_call[6] |= AX25ADDR_RESERVED;
 +	return &ax;
