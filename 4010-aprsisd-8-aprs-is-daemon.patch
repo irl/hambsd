@@ -2,14 +2,12 @@ Index: src/usr.sbin/aprsisd/Makefile
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/Makefile
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,7 @@
 +#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
 +
 +PROG=	aprsisd
 +SRCS=	aprsisd.c ax25.c
 +MAN=	aprsisd.8
-+
-+LDFLAGS= -lpthread
 +
 +.include <bsd.prog.mk>
 Index: src/usr.sbin/aprsisd/aprsisd.8
@@ -71,7 +69,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/aprsisd.c
-@@ -0,0 +1,292 @@
+@@ -0,0 +1,322 @@
 +
 +#include <stdio.h>
 +#include <fcntl.h>
@@ -79,12 +77,13 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +#include <string.h>
 +#include <unistd.h>
 +#include <stdlib.h>
-+#include <pthread.h>
 +#include <ctype.h>
 +
 +#include <sys/types.h>
 +#include <sys/ioctl.h>
 +#include <sys/socket.h>
++#include <sys/time.h>
++#include <sys/event.h>
 +#include <net/if.h>
 +#include <net/if_tun.h>
 +#include <netinet/in.h>
@@ -122,16 +121,18 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +char *tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
 +void tnc2_input(char *);
 +void tnc2_output(char *);
-+int loop(int, int);
++void aprsis_remote_open(char *, int, char *, int, int, char *);
++void aprsis_local_open(char *);
++void aprsis_loop(void);
 +int main(int, char **);
 +
 +static char *
 +read_mycallsign(void)
 +{
-+	FILE    *mcp;
-+	char    *call, *nl;
-+	size_t  callsize = 0;
-+	ssize_t calllen;
++	FILE	*mcp;
++	char	*call, *nl;
++	size_t	 callsize = 0;
++	ssize_t	 calllen;
 +
 +	call = NULL;
 +
@@ -272,67 +273,16 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +		err(1, "tnc2_output: write");
 +}
 +
-+void *
-+local_input_loop(void *arguments)
-+{
-+	char buf[1500];
-+	int nr;
-+
-+	bzero(buf, 1500);
-+
-+	while ((nr = read(tap, buf, 1500)) != -1 && nr != 0) {
-+		/* TODO: validate? */
-+		ax25_input(buf, nr);
-+		bzero(buf, 1500);
-+	}
-+	err(1, "read tap");
-+}
-+
-+void *
-+aprsis_input_loop(void *arguments)
-+{
-+	char buf[TNC2_MAXLINE];
-+	int ei, pos, nr;
-+	char *ep;
-+
-+	pos = 0;
-+	bzero(buf, TNC2_MAXLINE);
-+
-+	while ((nr = read(isd, &buf[pos], TNC2_MAXLINE - pos)) != -1 && nr != 0) {
-+		pos += nr;
-+		if ((ep = strchr(buf, '\n')) != NULL) {
-+			ei = ep - buf;
-+			if (buf[ei - 1] == '\r')
-+				buf[ei - 1] = '\0';
-+			buf[ei++] = '\0'; /* move index to start of new packet */
-+			printf("rcv: %s\n", buf);
-+			if (ei > 8 && buf[0] != '#') { /* TODO guess a better number */
-+				tnc2_input(buf);
-+			}
-+			if (ei < pos)
-+				memmove(buf, &buf[ei], pos - ei);
-+			pos -= ei;
-+		}
-+	}
-+	err(1, "read tcp");
-+}
-+
-+int
-+main(int argc, char **argv)
++void
++aprsis_remote_open(char *server, int port, char *call, int ssid, int pass,
++    char *filter)
 +{
 +	struct sockaddr_in addr;
-+	struct tuninfo ti;
 +	int nodelay;
-+
-+	tap = open("/dev/axtap0", O_RDWR);
-+
-+	ioctl(tap, TUNGIFINFO, &ti);
-+	ti.flags = IFF_UP | IFF_POINTOPOINT;
-+	ioctl(tap, TUNSIFINFO, &ti);
++	char login[512];
 +
 +	if ((isd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
 +		err(1, "socket");
-+		return -1;
 +	}
 +
 +	addr.sin_port = htons(PORT);
@@ -342,33 +292,111 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +
 +	if (connect(isd, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1) {
 +		err(1, "connect");
-+		return -1;
 +	}
 +
 +	nodelay = 1;
 +	setsockopt(isd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 +
-+	char login[100]; /* TODO: guess better */
-+	char *call = read_mycallsign();
-+	int pass = aprsis_pass(call);
-+       	sprintf(login, "user %s-6 pass %d vers aprsisd 0.1dev filter m/500\r\n", call, pass); /* TODO snprinf */
-+
++	if (pass == 1234567890)
++		pass = aprsis_pass(call);
++	snprintf(login, 512, "user %s-%d pass %d vers aprsisd 0.0-dev filter %s\r\n",
++	    call, ssid, pass, filter);
 +	if (write(isd, login, strlen(login)) == -1)
 +		err(1, "write");
++}
 +
-+	pthread_t aprsis_input_thread;
-+	pthread_t local_input_thread;
++void aprsis_local_open(char *interface)
++{
++	struct tuninfo ti;
++	tap = open(interface, O_RDWR);
++	ioctl(tap, TUNGIFINFO, &ti);
++	ti.flags = IFF_UP | IFF_POINTOPOINT;
++	ioctl(tap, TUNSIFINFO, &ti);
++}
 +
-+	pthread_create(&aprsis_input_thread, NULL, aprsis_input_loop, NULL);
-+	pthread_create(&local_input_thread, NULL, local_input_loop, NULL);
++/*
++ * Once a newline is found in the buffer, swap the CRLF (or just LF)
++ * for NUL to terminate the string and pass it to tnc2_input. Any
++ * remaining data in the buffer gets shuffled to the front and the
++ * new position in the buffer is returned.
++ */
++int
++aprsis_local_shuffle(char *buf, char* ep, int pos)
++{
++	int ei = ep - buf;
++	if (buf[ei - 1] == '\r')
++		buf[ei - 1] = '\0';
++	buf[ei++] = '\0'; /* move index to start of new packet */
++	printf("rcv: %s\n", buf);
++	if (ei > 10 && buf[0] != '#')
++		/* a reasonable minimum length and not in-band signalling */
++		tnc2_input(buf);
++	memmove(buf, &buf[ei], pos - ei);
++	pos -= ei;
++	return pos;
++}
 +
-+	while(1);
++void
++aprsis_loop(void)
++{
++	struct kevent chlist[2];
++	struct kevent evlist[2];
++	int evi, kq, l_nr, nev, r_pos, r_nr;
++	char r_buf[TNC2_MAXLINE], l_buf[1500], *r_ep;
++
++	r_pos = 0;
++	bzero(r_buf, TNC2_MAXLINE);
++	bzero(l_buf, 1500);
++
++	if ((kq = kqueue()) == -1)
++		err(1, "kqueue");
++
++	EV_SET(&chlist[0], isd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
++	EV_SET(&chlist[1], tap, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
++
++	while ((nev = kevent(kq, chlist, 2, evlist, 2, NULL)) > 0) {
++		for (evi = 0; evi < nev; evi++) {
++			if (evlist[evi].ident == tap) {
++				if ((l_nr = read(tap, l_buf, 1500)) == -1 || l_nr == 0)
++					err(1, "read tap");
++				/* TODO: validate? */
++				ax25_input(l_buf, l_nr);
++			} else if (evlist[evi].ident == isd) {
++				if (((r_nr = read(isd, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || r_nr == 0)
++					err(1, "read tcp");
++				r_pos += r_nr;
++				if ((r_ep = strchr(r_buf, '\n')) != NULL)
++					r_pos = aprsis_local_shuffle(r_buf, r_ep, r_pos);
++			}
++		}
++	}
++}
++
++int
++main(int argc, char **argv)
++{
++	char *call, *filter;
++	int isd, pass;
++
++	call = read_mycallsign();
++	pass = 1234567890;
++	filter = "m/500";
++
++	aprsis_remote_open(ADDRESS, PORT, call, 6, pass, filter);
++	aprsis_local_open("/dev/axtap0");
++
++	if (unveil(NULL, NULL) == -1)
++		err(1, "unveil");
++	if (pledge("stdio", NULL) == -1)
++		err(1, "pledge");
++
++	aprsis_loop();
 +}
 Index: src/usr.sbin/aprsisd/ax25.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/ax25.c
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,67 @@
 +#include <ctype.h>
 +#include <stdio.h>
 +#include <stdlib.h>
@@ -380,12 +408,14 @@ Index: src/usr.sbin/aprsisd/ax25.c
 +
 +#include "ax25.h"
 +
++#define AX25_SSIDMASK 0b00011110
++
 +char *
 +ax25_ntoa(struct ax25_address *axp)
 +{
 +	static char buf[10];
 +	int i, ssid;
-+	ssid = (axp->ax25_call[6] & 0b00011110) >> 1;
++	ssid = (axp->ax25_call[6] & AX25_SSIDMASK) >> 1;
 +	bzero(buf, 10);
 +	for (i = 0; i < 6; i++) {
 +		if (axp->ax25_call[i] == 0x40)
@@ -419,7 +449,7 @@ Index: src/usr.sbin/aprsisd/ax25.c
 +				if (isdigit(s[++i]))
 +					ssid[1] = s[i];
 +				ax.ax25_call[6] = atoi(ssid) << 1;
-+				if ((ax.ax25_call[6] & 0b11100001) != 0) {
++				if ((ax.ax25_call[6] & ~AX25_SSIDMASK) != 0) {
 +					/* non AX.25 SSID */
 +					return NULL;
 +				}
