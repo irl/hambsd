@@ -14,29 +14,28 @@ Index: src/usr.sbin/aprsisd/aprsisd.8
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/aprsisd.8
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,90 @@
 +.Dd October 13, 2019
 +.Dt APRSISD 8
 +.Os
 +.Sh NAME
 +.Nm aprsisd
 +.Nd APRS-IS daemon
-+.Sh
 +.Sh SYNOPSIS
 +.Nm aprsisd
 +.Op Fl D
-+.Op Fl c Ar callsign
++.Op Fl S Ar ssid
++.Op Fl i Ar axtapN
++.Op Fl p Ar passcode
 +.Op Fl f Ar filter
-+.Op Fl p Ar password
-+.Op Fl t Ar /dev/tapX
-+server
++.Op Ar server Op Ar port
 +.Sh DESCRIPTION
 +APRS-IS is an Internet-based network which inter-connects various APRS radio
 +networks throughout the world (and space).
 +The
 +.Nm
 +daemon works together with the kernel
-+.Xr tap 4
++.Xr axtap 4
 +driver to establish a connection to an APRS-IS server and present it as a
 +virtual network interface.
 +.Nm
@@ -51,10 +50,51 @@ Index: src/usr.sbin/aprsisd/aprsisd.8
 +A separate application, for example
 +.Xr aprsd 8 ,
 +must be used for that purpose.
++.Sh OPTIONS
++.Bl -tag -width Ds
++.It Fl D
++Do not daemonize.
++.It Fl S Ar ssid
++Set the SSID for the interface.
++Combined with your callsign this must be
++unique in the network, which usually means globally unique.
++See
++.Xr aprs 7
++for commonly used SSIDs for different station types.
++The default SSID is 0 (zero).
++.It Fl i Ar axtapN
++Use a specific
++.Xr axtap 4
++interface.
++By default the first available interface will be used.
++This option is primarily useful when starting
++.Nm
++during
++.Xr netstart 8 .
++.It Fl p Ar passcode
++Set the passcode to be used for login to the server.
++Contact the software author if you do not know your passcode.
++By default the connection will be unverified, meaning that the connection will
++be receive only (upload to APRS-IS will be forbidden).
++.It Fl f Ar filter
++Set a filter to be used with the server.
++.It Ar server Op Ar port
++Set the server to connect to, optionally specifying the TCP port.
++By default the round-robin DNS name
++.Em rotate.aprs2.net
++is used with port 14580.
++The server may be specified by either: a DNS name, a dotted-quad IPv4 address
++or a colon-seperated IPv6 address.
++.El
 +.Sh DIAGNOSTICS
++.Nm
++will send status information, warnings and errors to
++.Xr syslog 8
++using facility daemon and levels err, warn and info.
 +.Sh SEE ALSO
-+.Xr tun 4 ,
++.Xr axtap 4 ,
 +.Xr mycallsign 5 ,
++.Xr aprs 7 ,
 +.Xr aprsd 8
 +.Sh HISTORY
 +.Nm
@@ -69,12 +109,14 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/aprsisd.c
-@@ -0,0 +1,417 @@
+@@ -0,0 +1,476 @@
 +
 +#include <ctype.h>
 +#include <err.h>
 +#include <fcntl.h>
++#include <limits.h>
 +#include <netdb.h>
++#include <signal.h>
 +#include <stdarg.h>
 +#include <stdio.h>
 +#include <stdlib.h>
@@ -106,6 +148,8 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +int isd, tap;
 +
 +static __dead void usage(void);
++static void daemonize(void);
++static void signal_handler(int sig);
 +static char *read_mycallsign(void);
 +static char *aprsis_pass(char *);
 +static int ax25_input(char *, int);
@@ -125,9 +169,36 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +{
 +	extern char *__progname;
 +
-+	fprintf(stderr, "usage: %s [-D] [-s] [-p passcode] [server [port]]\n",
++	fprintf(stderr, "usage: %s [-D] [-S ssid] [-i axtapN] [-p passcode] [-f filter] [server [port]]\n",
 +	    __progname);
 +	exit(1);
++}
++
++static void
++signal_handler(int sig)
++{
++	switch (sig) {
++	case SIGHUP:
++		syslog(LOG_DAEMON | LOG_INFO, "caught hangup signal");
++		break;
++	case SIGTERM:
++		syslog(LOG_DAEMON | LOG_WARNING, "caught terminate signal, shutting down");
++		exit(0);
++		break;
++	}
++}
++
++static void
++daemonize(void)
++{
++	int i;
++	i = daemon(0, 0);
++	signal(SIGCHLD, SIG_IGN); /* ignore child */
++	signal(SIGTSTP, SIG_IGN); /* ignore tty signals */
++	signal(SIGTTOU, SIG_IGN);
++	signal(SIGTTIN, SIG_IGN);
++	signal(SIGHUP, signal_handler); /* catch hangup signal */
++	signal(SIGTERM, signal_handler); /* catch kill signal */
 +}
 +
 +static char *
@@ -162,10 +233,9 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +		ep = cp + strlen(call);
 +	hash = 0x73e2;
 +	while (cp < ep) {
-+		/* TODO toupper */
-+		hash ^= (*(cp++) << 8);
++		hash ^= (toupper(*(cp++)) << 8);
 +		if (cp < ep)
-+			hash ^= (*(cp++));
++			hash ^= (toupper(*(cp++)));
 +	}
 +	snprintf(pass, 6, "%d", hash);
 +	return pass;
@@ -320,8 +390,8 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	hints.ai_socktype = SOCK_STREAM;
 +
 +	if ((rv = getaddrinfo(server, port, &hints, &servinfo)) != 0) {
-+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-+		exit(1); /* TODO */
++		syslog(LOG_DAEMON | LOG_ERR, "getaddrinfo: %s\n", gai_strerror(rv));
++		return;
 +	}
 +
 +	for (p = servinfo; p != NULL; p = p->ai_next) {
@@ -364,10 +434,27 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +aprsis_local_open(char *interface)
 +{
 +	struct tuninfo ti;
-+	tap = open(interface, O_RDWR);
-+	ioctl(tap, TUNGIFINFO, &ti);
-+	ti.flags = IFF_UP | IFF_POINTOPOINT;
-+	ioctl(tap, TUNSIFINFO, &ti);
++	char ifpath[PATH_MAX];
++	int i;
++
++	if (interface != NULL) {
++		snprintf(ifpath, PATH_MAX, "/dev/%s", interface);
++		if ((tap = open(ifpath, O_RDWR)) == -1)
++			return;
++		ioctl(tap, TUNGIFINFO, &ti);
++		ti.flags = IFF_UP | IFF_POINTOPOINT;
++		ioctl(tap, TUNSIFINFO, &ti);
++		return;
++	}
++	for (i = 0; i < 100; i++) {
++		snprintf(ifpath, PATH_MAX, "/dev/axtap%d", i);
++		if ((tap = open(ifpath, O_RDWR)) == -1)
++			continue;
++		ioctl(tap, TUNGIFINFO, &ti);
++		ti.flags = IFF_UP | IFF_POINTOPOINT;
++		ioctl(tap, TUNSIFINFO, &ti);
++		return;
++	}
 +}
 +
 +/*
@@ -415,7 +502,6 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +			if (evlist[evi].ident == tap) {
 +				if ((l_nr = read(tap, l_buf, 1500)) == -1 || l_nr == 0)
 +					err(1, "read tap");
-+				/* TODO: validate? */
 +				if (ax25_input(l_buf, l_nr) == -1)
 +					return;
 +				bzero(l_buf, 1500);
@@ -434,20 +520,28 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +int
 +main(int argc, char **argv)
 +{
-+	char *call, ch, *filter, *pass, *port, *server, *ssid;
++	char *call, ch, *filter, *interface, *pass, *port, *server, *ssid;
 +	const char *errstr;
-+	int isd;
++	int daemon;
 +
++	daemon = 1;
 +	call = read_mycallsign();
 +	ssid = "0";
 +	pass = "-1";
 +	filter = NULL;
++	interface = NULL;
 +	server = "rotate.aprs2.net";
 +	port = "14580";
 +
-+	while ((ch = getopt(argc, argv, "s:p:f:")) != -1) {
++	while ((ch = getopt(argc, argv, "Di:S:p:f:")) != -1) {
 +		switch (ch) {
-+		case 's':
++		case 'D':
++			daemon = 0;
++			break;
++		case 'i':
++			interface = optarg;
++			break;
++		case 'S':
 +			strtonum(optarg, 0, 15, &errstr);
 +			if (errstr) {
 +				warnx("SSID is %s: %s", errstr, optarg);
@@ -473,7 +567,12 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	if (argc > 1)
 +		port = argv[1];
 +
-+	aprsis_local_open("/dev/axtap0");
++	aprsis_local_open(interface);
++	if (tap == -1)
++		err(1, "tap open");
++
++	if (daemon)
++		daemonize();
 +
 +	if (unveil(NULL, NULL) == -1)
 +		err(1, "unveil");
