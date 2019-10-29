@@ -673,7 +673,7 @@ Index: src/distrib/sets/lists/base/mi
  ./etc/rc.d/identd
  ./etc/rc.d/ifstated
  ./etc/rc.d/iked
-@@ -2512,6 +2513,7 @@
+@@ -2517,6 +2518,7 @@
  ./usr/sbin/host
  ./usr/sbin/hostapd
  ./usr/sbin/httpd
@@ -685,7 +685,7 @@ Index: src/distrib/sets/lists/man/mi
 ===================================================================
 --- src.orig/distrib/sets/lists/man/mi
 +++ src/distrib/sets/lists/man/mi
-@@ -2331,6 +2331,7 @@
+@@ -2332,6 +2332,7 @@
  ./usr/share/man/man8/i386/memconfig.8
  ./usr/share/man/man8/i386/pxeboot.8
  ./usr/share/man/man8/i386/wsmoused.8
