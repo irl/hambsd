@@ -107,13 +107,14 @@ Index: src/usr.sbin/aprsd/aprsd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsd/aprsd.c
-@@ -0,0 +1,530 @@
+@@ -0,0 +1,544 @@
 +/*
 + * aprsd - automatic packet reporting system daemon
 + *
 + * Written by Iain R. Learmonth <irl@fsfe.org> for the public domain.
 + */
 +
++#include <err.h>
 +#include <errno.h>
 +#include <fcntl.h>
 +#include <pthread.h>
@@ -143,7 +144,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +struct aprs_interface {
 +	int		 ai_fd;		/* file descriptor */
 +	int		 ai_rbufsize;	/* receive buffer size */
-+	char		*ai_name;
++	char		*ai_name;	/* interface name, (e.g. axtap0) */
 +};
 +
 +struct aprs_beacon_attrs {
@@ -152,6 +153,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	time_t		 next_time;	/* next beacon time */
 +	int		 interval;	/* beacon period */
 +	int		 flags;		/* aprsd.h: BEACONF_* */
++	int		 ssid;		/* SSID, 0-15 */
 +	int		 type;		/* aprsd.h: BEACONT_* */
 +	char		*call;		/* callsign as ascii text */
 +	char		*comment;	/* comment text */
@@ -268,6 +270,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +static char *
 +read_mycallsign(void)
 +{
++	static char fcall[20];
 +	FILE    *mcp;
 +	char    *call, *nl;
 +	size_t  callsize = 0;
@@ -405,6 +408,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	}
 +	for (i = 0; i < calllen; i++)
 +		buf[7 + i] = attrs->call[i] << 1;
++	buf[13] = (attrs->ssid << 1) | 0xe1;
 +
 +	if (attrs->comment != NULL) {
 +		commentlen = strlen(attrs->comment);
@@ -544,8 +548,9 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +{
 +	struct aprsd_config conf;
 +	struct aprs_beacon_attrs *beacons[20];
-+	int daemon, skipdelay;
++	int daemon, skipdelay, ssid;
 +	char ch, *conffile, *device;
++	const char *errstr;
 +
 +	conf.num_beacons = 0;
 +
@@ -554,8 +559,9 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	daemon = 1;
 +	device = "axkiss0";
 +	skipdelay = 0;
++	ssid = 0;
 +
-+	while ((ch = getopt(argc, argv, "i:f:Ds")) != -1) {
++	while ((ch = getopt(argc, argv, "DS:i:f:s")) != -1) {
 +		switch (ch) {
 +		case 'i':
 +			device = optarg;
@@ -567,6 +573,13 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +			break;
 +		case 's':
 +			skipdelay = 1;
++			break;
++		case 'S':
++			ssid = strtonum(optarg, 0, 15, &errstr);
++			if (errstr) {
++				warnx("SSID is %s: %s", errstr, optarg);
++				usage();
++			}
 +			break;
 +		default:
 +			usage();
@@ -631,6 +644,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +			ba->sensor = bc->sensor;
 +			ba->comment = bc->comment;
 +			ba->call = call;
++			ba->ssid = ssid;
 +			break;
 +		default:
 +			fatal("unknown beacon type");
