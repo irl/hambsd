@@ -107,7 +107,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsd/aprsd.c
-@@ -0,0 +1,529 @@
+@@ -0,0 +1,530 @@
 +/*
 + * aprsd - automatic packet reporting system daemon
 + *
@@ -491,7 +491,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	struct kevent chlist[10];
 +	struct kevent evlist[10];
 +	char framebuf[9000];
-+	int bi, ii, evi, framelen, kq, nev;
++	int bi, ii, evi, framelen, kq, nev, nr;
 +	struct aprs_interface *aif;
 +
 +	if ((kq = kqueue()) == -1)
@@ -510,10 +510,11 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +			if (evlist[evi].filter != EVFILT_TIMER) {
 +				char *bp, *ep;
 +				aif = aprs_lookup_interface(evlist[evi].ident);
-+				bi = read(aif->ai_fd, framebuf, aif->ai_rbufsize);
++				if ((nr = read(aif->ai_fd, framebuf, aif->ai_rbufsize)) == -1)
++					fatal("read");
 +				if (aif != aifs[0]) {
 +					bp = framebuf;
-+					ep = bp + bi;
++					ep = bp + nr;
 +					while (bp < ep) {
 +#define caplen ((struct bpf_hdr *)bp)->bh_caplen
 +#define hdrlen ((struct bpf_hdr *)bp)->bh_hdrlen
