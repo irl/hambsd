@@ -376,3 +376,110 @@ Index: src/sys/net/bpf.c
  	case DLT_RAW:
  	case DLT_NULL:
  		sockp->sa_family = AF_UNSPEC;
+Index: src/share/man/man4/tap.4
+===================================================================
+--- src.orig/share/man/man4/tap.4
++++ src/share/man/man4/tap.4
+@@ -30,8 +30,9 @@
+ .Dt TAP 4
+ .Os
+ .Sh NAME
++.Nm axtap ,
+ .Nm tap
+-.Nd Ethernet tunnel pseudo-device
++.Nd Link-layer tunnel pseudo-devices
+ .Sh SYNOPSIS
+ .Cd "pseudo-device tun"
+ .Pp
+@@ -39,8 +40,10 @@
+ .In net/if_tun.h
+ .Sh DESCRIPTION
+ The
+-.Nm
+-driver provides an Ethernet interface pseudo-device.
++.Nm axtap
++and
++.Nm tap
++drivers provide an AX.25 and Ethernet interface pseudo-device respectively.
+ Packets sent to this interface can be read by a userland process
+ and processed as desired.
+ Packets written by the userland process are injected back into
+@@ -51,7 +54,7 @@ A
+ interface can be created at runtime using the
+ .Ic ifconfig tap Ns Ar N Ic create
+ command or by opening the character special device
+-.Pa /dev/tapN .
++.Pf /dev/ Op ax Pa tapN .
+ .Pp
+ Each device has an exclusive open property: it cannot be opened
+ if it is already open and in use by another process.
+Index: src/etc/MAKEDEV.common
+===================================================================
+--- src.orig/etc/MAKEDEV.common
++++ src/etc/MAKEDEV.common
+@@ -445,11 +445,13 @@ _mkdev(bpf, bpf, {-M bpf c major_bpf_c 0
+ 	M bpf0 c major_bpf_c 0 600-})dnl
+ _mkdev(tun, {-tun*-}, {-M tun$U c major_tun_c $U 600-}, 600)dnl
+ _mkdev(tap, {-tap*-}, {-M tap$U c major_tap_c $U 600-}, 600)dnl
++_mkdev(axtap, {-axtap*-}, {-M axtap$U c major_axtap_c $U 600-}, 600)dnl
+ _mkdev(switch, {-switch*-}, {-M switch$U c major_switch_c $U 600-}, 600)dnl
+ __devitem(speak, speaker, PC speaker,spkr)dnl
+ _mkdev(speak, speaker, {-M speaker c major_speak_c 0 600-})dnl
+ __devitem(tun, tun*, Network tunnel driver)dnl
+ __devitem(tap, tap*, Ethernet tunnel driver)dnl
++__devitem(axtap, axtap*, AX.25 tunnel driver)dnl
+ __devitem(switch, switch*, Switch driver)dnl
+ __devitem(rnd, *random, In-kernel random data source,random)dnl
+ _mkdev(rnd, *random, {-M urandom c major_rnd_c 0 644
+Index: src/etc/etc.amd64/MAKEDEV.md
+===================================================================
+--- src.orig/etc/etc.amd64/MAKEDEV.md
++++ src/etc/etc.amd64/MAKEDEV.md
+@@ -88,6 +88,7 @@ _DEV(rmidi, 52)
+ _DEV(speak, 27)
+ _DEV(tun, 40)
+ _DEV(tap, 93)
++_DEV(axtap, 98)
+ _DEV(tuner, 49)
+ _DEV(uk, 20)
+ _DEV(vi, 44)
+@@ -124,6 +125,7 @@ target(all, pty, 0)dnl
+ target(all, bio)dnl
+ target(all, tun, 0, 1, 2, 3)dnl
+ target(all, tap, 0, 1, 2, 3)dnl
++target(all, axtap, 0, 1, 2, 3)dnl
+ target(all, xy, 0, 1, 2, 3)dnl
+ target(all, rd, 0)dnl
+ target(all, cd, 0, 1)dnl
+Index: src/etc/etc.sparc64/MAKEDEV.md
+===================================================================
+--- src.orig/etc/etc.sparc64/MAKEDEV.md
++++ src/etc/etc.sparc64/MAKEDEV.md
+@@ -122,6 +122,7 @@ _DEV(rmidi, 68)
+ _DEV(rnd, 119)
+ _DEV(tun, 111)
+ _DEV(tap, 135)
++_DEV(axtap, 137)
+ _DEV(uk, 60)
+ _DEV(uperf, 25)
+ _DEV(vi, 44)
+@@ -164,6 +165,7 @@ target(all, pty, 0)dnl
+ target(all, bio)dnl
+ target(all, tun, 0, 1, 2, 3)dnl
+ target(all, tap, 0, 1, 2, 3)dnl
++target(all, axtap, 0, 1, 2, 3)dnl
+ target(all, xy, 0, 1, 2, 3)dnl
+ target(all, rd, 0)dnl
+ target(all, cd, 0, 1)dnl
+Index: src/sys/arch/sparc64/sparc64/conf.c
+===================================================================
+--- src.orig/sys/arch/sparc64/sparc64/conf.c
++++ src/sys/arch/sparc64/sparc64/conf.c
+@@ -292,6 +292,7 @@ struct cdevsw	cdevsw[] =
+ 	cdev_fuse_init(NFUSE,fuse),	/* 134: fuse */
+ 	cdev_tun_init(NTUN,tap),	/* 135: Ethernet network tunnel */
+ 	cdev_switch_init(NSWITCH,switch), /* 136: switch(4) control interface */
++	cdev_tun_init(NTUN,axtap),	/* 137: AX.25 network tunnel */
+ };
+ int	nchrdev = nitems(cdevsw);
+ 
