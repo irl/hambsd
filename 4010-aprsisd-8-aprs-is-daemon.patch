@@ -590,7 +590,7 @@ Index: src/usr.sbin/aprsisd/ax25.c
 ===================================================================
 --- /dev/null
 +++ src/usr.sbin/aprsisd/ax25.c
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,77 @@
 +#include <ctype.h>
 +#include <stdio.h>
 +#include <stdlib.h>
@@ -604,6 +604,11 @@ Index: src/usr.sbin/aprsisd/ax25.c
 +
 +#define AX25_SSIDMASK 0b00011110
 +
++/*
++ * Convert the network representation of an AX.25 address to a human readable
++ * callsign and SSID. This function is not thread safe, as it returns the
++ * result in a statically assigned buffer.
++ */
 +char *
 +ax25_ntoa(struct ax25_address *axp)
 +{
@@ -619,11 +624,16 @@ Index: src/usr.sbin/aprsisd/ax25.c
 +	if (ssid == 0) {
 +		buf[i] = '\0';
 +	} else {
-+		sprintf(&buf[i], "-%d", ssid);
++		sprintf(&buf[i], 10, "-%d", ssid);
 +	}
 +	return buf;
 +}
 +
++/*
++ * Convert a human readable callsign and SSID to the network representation of
++ * an AX.25 address. This function is not thread safe, as it returns the result
++ * in a statically assigned buffer.
++ */
 +struct ax25_address *
 +ax25_aton(char *s)
 +{
