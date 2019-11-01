@@ -548,7 +548,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +{
 +	struct aprsd_config conf;
 +	struct aprs_beacon_attrs *beacons[20];
-+	int daemon, skipdelay, ssid;
++	int ci, daemon, skipdelay, ssid;
 +	char ch, *conffile, *device;
 +	const char *errstr;
 +
@@ -612,7 +612,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	if (conf.num_beacons == 0)
 +		fatal("refusing to run without beacons defined");
 +
-+	for (int ci = 0; ci < conf.num_beacons; ci++) {
++	for (ci = 0; ci < conf.num_beacons; ci++) {
 +		struct beacon_config *bc = conf.beacons[ci];
 +		struct aprs_beacon_attrs *ba = malloc(sizeof(struct aprs_beacon_attrs));
 +		beacons[ci] = ba;
