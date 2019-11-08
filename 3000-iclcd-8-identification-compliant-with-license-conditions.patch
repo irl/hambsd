@@ -614,7 +614,7 @@ Index: src/etc/rc
 ===================================================================
 --- src.orig/etc/rc
 +++ src/etc/rc
-@@ -584,7 +584,7 @@ start_daemon ldomd sshd switchd snmpd ld
+@@ -583,7 +583,7 @@ start_daemon ldomd sshd switchd snmpd ld
  start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
  start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
  start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
@@ -685,7 +685,7 @@ Index: src/distrib/sets/lists/man/mi
 ===================================================================
 --- src.orig/distrib/sets/lists/man/mi
 +++ src/distrib/sets/lists/man/mi
-@@ -2332,6 +2332,7 @@
+@@ -2335,6 +2335,7 @@
  ./usr/share/man/man8/i386/memconfig.8
  ./usr/share/man/man8/i386/pxeboot.8
  ./usr/share/man/man8/i386/wsmoused.8

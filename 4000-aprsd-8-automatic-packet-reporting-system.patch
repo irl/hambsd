@@ -767,7 +767,7 @@ Index: src/etc/rc
 ===================================================================
 --- src.orig/etc/rc
 +++ src/etc/rc
-@@ -584,7 +584,7 @@ start_daemon ldomd sshd switchd snmpd ld
+@@ -583,7 +583,7 @@ start_daemon ldomd sshd switchd snmpd ld
  start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
  start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
  start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
