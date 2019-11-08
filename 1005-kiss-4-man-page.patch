@@ -15,7 +15,7 @@ Index: src/share/man/man4/kiss.4
 ===================================================================
 --- /dev/null
 +++ src/share/man/man4/kiss.4
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,115 @@
 +.\"	$OpenBSD$
 +.\"
 +.\" Copyright (c) 1983, 1991, 1993
@@ -63,9 +63,14 @@ Index: src/share/man/man4/kiss.4
 +including the following:
 +.Bl -bullet
 +.It
-+Dire Wolf
++Dire Wolf (using a
++.Xr pty 4 )
++.It
++AEA PK-88
 +.El
 +.Pp
++The TNC must already be in KISS mode before the line discipline is activated.
++Refer to the documentation for your TNC to find how to do this.
 +When this line discipline is first attached, it will in turn attach to the first
 +available
 +.Xr ekiss 4
@@ -76,9 +81,10 @@ Index: src/share/man/man4/kiss.4
 +discipline can be attached using
 +.Xr ldattach 8 .
 +For example, assuming the TNC is connected to
-+.Pa /dev/cua00 :
++.Pa /dev/cua00
++at 1200 baud:
 +.Bd -literal
-+$ ldattach kiss cua00
++$ ldattach -s 1200 kiss cua00
 +.Ed
 +.Pp
 +The line discipline is also enabled by the following sequence:
