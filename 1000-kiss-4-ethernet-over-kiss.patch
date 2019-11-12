@@ -27,11 +27,12 @@ Index: src/sys/conf/GENERIC
  
  # clonable devices
  pseudo-device	bpfilter	# packet filter
-@@ -108,6 +109,7 @@ pseudo-device	vether		# Virtual ethernet
+@@ -108,6 +109,8 @@ pseudo-device	vether		# Virtual ethernet
  pseudo-device	vxlan		# Virtual extensible LAN
  pseudo-device	vlan		# IEEE 802.1Q VLAN
  pseudo-device	switch		# Switch
 +pseudo-device	ekiss		# Ethernet-over-KISS
++pseudo-device	axkiss		# AX.25-over-KISS
  
  pseudo-device	bio	1	# ioctl multiplexing device
  
@@ -47,19 +48,20 @@ Index: src/sys/conf/files
  
  pseudo-device loop: ifnet
  pseudo-device pair: ifnet, ether
-@@ -566,6 +567,7 @@ pseudo-device vether: ifnet, ether
+@@ -566,6 +567,8 @@ pseudo-device vether: ifnet, ether
  pseudo-device pppx: ifnet
  pseudo-device vxlan: ifnet, ether, ifmedia
  pseudo-device switch: ifnet, ether
 +pseudo-device ekiss: ifnet
++pseudo-device axkiss: ifnet
  
  pseudo-device ksyms
  file	dev/ksyms.c			ksyms needs-flag
-@@ -788,6 +790,9 @@ file net/if_ethersubr.c			ether			needs-
+@@ -788,6 +791,9 @@ file net/if_ethersubr.c			ether			needs-
  file net/if_etherip.c			etherip			needs-flag
  file net/if_spppsubr.c			sppp
  file net/if_loop.c			loop
-+file net/if_axkiss.c			ekiss
++file net/if_axkiss.c			axkiss
 +file net/if_ekiss.c			ekiss
 +file net/kiss_tty.c			kiss			needs-flag
  file net/if_media.c			ifmedia
@@ -775,7 +777,7 @@ Index: src/sys/net/if_axkiss.c
 ===================================================================
 --- /dev/null
 +++ src/sys/net/if_axkiss.c
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,293 @@
 +/*	$OpenBSD$ */
 +
 +/*
@@ -883,11 +885,15 @@ Index: src/sys/net/if_axkiss.c
 +	ifp->if_xflags = IFXF_CLONED | IFXF_MPSAFE;
 +	ifp->if_link_state = LINK_STATE_UP;
 +	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
-+	ether_fakeaddr(ifp);
 +
 +	if_counters_alloc(ifp);
 +	if_attach(ifp);
-+	ether_ifattach(ifp);
++
++	/* ax25_ifattach */
++	ifp->if_type = IFT_AX25;
++	ifp->if_addrlen = 7;
++	ifp->if_hdrlen = 72;
++	if_alloc_sadl(ifp);
 +
 +	ifp->if_llprio = IFQ_MAXPRIO;
 +
@@ -908,9 +914,11 @@ Index: src/sys/net/if_axkiss.c
 +		axkiss_down(sc);
 +	NET_UNLOCK();
 +
-+	ether_ifdetach(ifp);
++	/* ax25_ifdetatch */
++	if_deactivate(ifp);
++	KASSERT(SRPL_EMPTY_LOCKED(&ifp->if_inputs));
++	/***/
 +	if_detach(ifp);
-+
 +	free(sc, M_DEVBUF, sizeof(*sc));
 +
 +	return (0);
@@ -960,7 +968,8 @@ Index: src/sys/net/if_axkiss.c
 +		break;
 +
 +	default:
-+		error = ether_ioctl(ifp, &sc->sc_ac, cmd, data);
++		error = EOPNOTSUPP;
++		//error = ether_ioctl(ifp, &sc->sc_ac, cmd, data);
 +		break;
 +	}
 +
