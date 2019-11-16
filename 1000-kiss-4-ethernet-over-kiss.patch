@@ -910,7 +910,7 @@ Index: src/sys/net/if_axkiss.c
 +		axkiss_down(sc);
 +	NET_UNLOCK();
 +
-+	ax25_ifdetatch(ifp);
++	ax25_ifdetach(ifp);
 +	if_detach(ifp);
 +	free(sc, M_DEVBUF, sizeof(*sc));
 +
