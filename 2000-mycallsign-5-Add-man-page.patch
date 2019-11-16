@@ -62,7 +62,7 @@ Index: src/distrib/sets/lists/man/mi
 ===================================================================
 --- src.orig/distrib/sets/lists/man/mi
 +++ src/distrib/sets/lists/man/mi
-@@ -2140,6 +2140,7 @@
+@@ -2141,6 +2141,7 @@
  ./usr/share/man/man5/mk.conf.5
  ./usr/share/man/man5/moduli.5
  ./usr/share/man/man5/motd.5
