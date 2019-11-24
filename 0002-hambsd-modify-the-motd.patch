@@ -1,7 +1,16 @@
-Index: src/etc/motd
-===================================================================
---- src.orig/etc/motd
-+++ src/etc/motd
+From 394f0903248fadb08529ebd5cde0d9ad42a1cd20 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:49:15 +0000
+Subject: [PATCH 02/13] hambsd: modify the motd
+
+---
+ etc/motd | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/etc/motd b/etc/motd
+index ff1dc9bb944..047662df624 100644
+--- a/etc/motd
++++ b/etc/motd
 @@ -1,10 +1,11 @@
 -OpenBSD ?.? (UNKNOWN)
 +HamBSD ?.? (UNKNOWN)
@@ -21,3 +30,6 @@ Index: src/etc/motd
 +Please ensure you comply with local laws regarding amateur radio
 +transmissions.
  
+-- 
+2.23.0
+

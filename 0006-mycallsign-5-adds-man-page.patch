@@ -1,0 +1,86 @@
+From 60f8217b4f532e17fca591253a9806b153b81528 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:53:43 +0000
+Subject: [PATCH 06/13] mycallsign(5): adds man page
+
+---
+ distrib/sets/lists/man/mi   |  1 +
+ share/man/man5/Makefile     |  2 +-
+ share/man/man5/mycallsign.5 | 40 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 42 insertions(+), 1 deletion(-)
+ create mode 100644 share/man/man5/mycallsign.5
+
+diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
+index 4169cc4994e..e901c7f897e 100644
+--- a/distrib/sets/lists/man/mi
++++ b/distrib/sets/lists/man/mi
+@@ -2142,6 +2142,7 @@
+ ./usr/share/man/man5/mk.conf.5
+ ./usr/share/man/man5/moduli.5
+ ./usr/share/man/man5/motd.5
++./usr/share/man/man5/mycallsign.5
+ ./usr/share/man/man5/myname.5
+ ./usr/share/man/man5/netgroup.5
+ ./usr/share/man/man5/netid.5
+diff --git a/share/man/man5/Makefile b/share/man/man5/Makefile
+index abc05b618a5..711df7ad844 100644
+--- a/share/man/man5/Makefile
++++ b/share/man/man5/Makefile
+@@ -6,7 +6,7 @@ MAN=	acct.5 ar.5 bsd.port.mk.5 bsd.port.arch.mk.5 bsd.regress.mk.5 \
+ 	defaultdomain.5 dir.5 disktab.5 elf.5 ethers.5 fbtab.5 files.conf.5 \
+ 	fs.5 fstab.5 genassym.cf.5 group.5 hostname.if.5 hosts.5 installurl.5 \
+ 	intro.5 login.conf.5 mandoc.db.5 mixerctl.conf.5 \
+-	mk.conf.5 moduli.5 motd.5 myname.5 netgroup.5 passwd.5 \
++	mk.conf.5 moduli.5 motd.5 mycallsign.5 myname.5 netgroup.5 passwd.5 \
+ 	pf.conf.5 pf.os.5 port-modules.5 printcap.5 protocols.5 \
+ 	ranlib.5 remote.5 resolv.conf.5 rpc.5 ruby-module.5 \
+ 	services.5 shells.5 \
+diff --git a/share/man/man5/mycallsign.5 b/share/man/man5/mycallsign.5
+new file mode 100644
+index 00000000000..a43eb7e1c6c
+--- /dev/null
++++ b/share/man/man5/mycallsign.5
+@@ -0,0 +1,40 @@
++.Dd October 11, 2019
++.Dt MYCALLSIGN 5
++.Os
++.Sh NAME
++.Nm mycallsign
++.Nd system default callsign
++.Sh DESCRIPTION
++The
++.Nm mycallsign
++file is used as the system default callsign for radio applications, for example
++.Xr aprsd 8
++or
++.Xr iclcd 8 .
++.Pp
++For amateur radio usage, the file contains the callsign to be used for
++identification purposes according to the conditions of your amateur radio
++license.
++This this could include a prefix, core callsign, a regional locator, and
++suffix.
++.Pp
++If used for another purpose, the license requirements may be different or you
++may use tactical callsigns.
++.Pp
++Unless using AX.25 or APRS, the exact format of the callsign is not prescribed
++by the file format beyond that it must only contain printable
++.Xr ascii 7
++characters.
++.Pp
++If using AX.25 or APRS then the callsign must consist of at least 3 and at most
++6 characters.
++It can only contain uppercase letters and numbers.
++.Sh FILES
++.Bl -tag -width "/etc/mycallsign" -compact
++.It Pa /etc/mycallsign
++.El
++.Sh SEE ALSO
++.Xr heard 1 ,
++.Xr heard 5 ,
++.Xr aprsd 8 ,
++.Xr iclcd 8
+-- 
+2.23.0
+

@@ -1,7 +1,17 @@
-Index: src/sbin/ldattach/ldattach.8
-===================================================================
---- src.orig/sbin/ldattach/ldattach.8
-+++ src/sbin/ldattach/ldattach.8
+From 753ae671c5ff393e5ae9001a9daa461b19504aff Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:50:42 +0000
+Subject: [PATCH 08/13] ldattach(8): add kiss support
+
+---
+ sbin/ldattach/ldattach.8 | 7 ++++++-
+ sbin/ldattach/ldattach.c | 2 ++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/sbin/ldattach/ldattach.8 b/sbin/ldattach/ldattach.8
+index 83b2224fd4c..eeb935079e3 100644
+--- a/sbin/ldattach/ldattach.8
++++ b/sbin/ldattach/ldattach.8
 @@ -14,7 +14,7 @@
  .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
@@ -22,7 +32,7 @@ Index: src/sbin/ldattach/ldattach.8
  .El
  .It Ar device
  Specifies the name of the serial line.
-@@ -163,6 +167,7 @@ tty01	"/sbin/ldattach nmea"	unknown	on s
+@@ -163,6 +167,7 @@ tty01	"/sbin/ldattach nmea"	unknown	on softcar
  .Xr endrun 4 ,
  .Xr msts 4 ,
  .Xr nmea 4 ,
@@ -30,10 +40,10 @@ Index: src/sbin/ldattach/ldattach.8
  .Xr pty 4 ,
  .Xr tty 4 ,
  .Xr ttys 5 ,
-Index: src/sbin/ldattach/ldattach.c
-===================================================================
---- src.orig/sbin/ldattach/ldattach.c
-+++ src/sbin/ldattach/ldattach.c
+diff --git a/sbin/ldattach/ldattach.c b/sbin/ldattach/ldattach.c
+index 042f119cefa..a604198c537 100644
+--- a/sbin/ldattach/ldattach.c
++++ b/sbin/ldattach/ldattach.c
 @@ -205,6 +205,8 @@ main(int argc, char *argv[])
  		ldisc = MSTSDISC;
  	} else if (!strcmp(disc, "endrun")) {
@@ -43,3 +53,6 @@ Index: src/sbin/ldattach/ldattach.c
  	} else {
  		syslog(LOG_ERR, "unknown line discipline %s", disc);
  		goto bail_out;
+-- 
+2.23.0
+

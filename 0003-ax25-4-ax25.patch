@@ -1,7 +1,38 @@
-Index: src/lib/libc/net/Makefile.inc
-===================================================================
---- src.orig/lib/libc/net/Makefile.inc
-+++ src/lib/libc/net/Makefile.inc
+From 7840af0604e6f6815d70924569125d6f58f934f4 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:54:40 +0000
+Subject: [PATCH 03/13] ax25(4): ax25
+
+---
+ lib/libc/Symbols.list     |   2 +
+ lib/libc/net/Makefile.inc |   2 +-
+ lib/libc/net/ax25.c       |  74 +++++++++++++++
+ sys/conf/GENERIC          |   1 +
+ sys/conf/files            |   3 +
+ sys/netax25/if_ax25.h     | 113 +++++++++++++++++++++++
+ sys/netax25/if_ax25subr.c | 183 ++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 377 insertions(+), 1 deletion(-)
+ create mode 100644 lib/libc/net/ax25.c
+ create mode 100644 sys/netax25/if_ax25.h
+ create mode 100644 sys/netax25/if_ax25subr.c
+
+diff --git a/lib/libc/Symbols.list b/lib/libc/Symbols.list
+index f9aa62ab6e8..e7cacfba399 100644
+--- a/lib/libc/Symbols.list
++++ b/lib/libc/Symbols.list
+@@ -1092,6 +1092,8 @@ _res
+ _res_ext
+ _res_opcodes
+ _res_resultcodes
++ax25_aton
++ax25_ntoa
+ dn_expand
+ endhostent
+ endnetent
+diff --git a/lib/libc/net/Makefile.inc b/lib/libc/net/Makefile.inc
+index 41a3164d6a9..452b8b874e6 100644
+--- a/lib/libc/net/Makefile.inc
++++ b/lib/libc/net/Makefile.inc
 @@ -5,7 +5,7 @@
  
  CFLAGS+=-DRESOLVSORT
@@ -11,10 +42,11 @@ Index: src/lib/libc/net/Makefile.inc
  	gai_strerror.c getaddrinfo.c gethostnamadr.c \
  	getifaddrs.c getnameinfo.c getnetent.c \
  	getnetnamadr.c getpeereid.c getproto.c getprotoent.c getprotoname.c \
-Index: src/lib/libc/net/ax25.c
-===================================================================
+diff --git a/lib/libc/net/ax25.c b/lib/libc/net/ax25.c
+new file mode 100644
+index 00000000000..fb2c1ad98cf
 --- /dev/null
-+++ src/lib/libc/net/ax25.c
++++ b/lib/libc/net/ax25.c
 @@ -0,0 +1,74 @@
 +#include <ctype.h>
 +#include <string.h>
@@ -90,10 +122,37 @@ Index: src/lib/libc/net/ax25.c
 +	return &ax;
 +}
 +
-Index: src/sys/netax25/if_ax25.h
-===================================================================
+diff --git a/sys/conf/GENERIC b/sys/conf/GENERIC
+index 92240cf0ab3..0b51e631222 100644
+--- a/sys/conf/GENERIC
++++ b/sys/conf/GENERIC
+@@ -56,6 +56,7 @@ option		PIPEX		# Ppp IP EXtension, for npppd
+ option		MROUTING	# Multicast router
+ option		MPLS		# Multi-Protocol Label Switching
+ #option		BFD		# Bi-directional Forwarding Detection
++option		AX25		# AX.25
+ 
+ #mpath0		at root		# SCSI Multipathing
+ #scsibus*	at mpath?
+diff --git a/sys/conf/files b/sys/conf/files
+index d6ada6f53a9..5aaa4a03ba1 100644
+--- a/sys/conf/files
++++ b/sys/conf/files
+@@ -1001,6 +1001,9 @@ file net/pfkeyv2.c			ipsec | tcp_signature
+ file net/pfkeyv2_parsemessage.c		ipsec | tcp_signature
+ file net/pfkeyv2_convert.c		ipsec | tcp_signature
+ 
++# AX25
++file netax25/if_ax25subr.c		ax25
++
+ # libx86emu
+ file dev/x86emu/x86emu.c		x86emu
+ file dev/x86emu/x86emu_util.c		x86emu
+diff --git a/sys/netax25/if_ax25.h b/sys/netax25/if_ax25.h
+new file mode 100644
+index 00000000000..bd4d50da562
 --- /dev/null
-+++ src/sys/netax25/if_ax25.h
++++ b/sys/netax25/if_ax25.h
 @@ -0,0 +1,113 @@
 +/*	$OpenBSD: if_ether.h,v 1.76 2019/07/17 16:46:18 mpi Exp $	*/
 +/*	$NetBSD: if_ether.h,v 1.22 1996/05/11 13:00:00 mycroft Exp $	*/
@@ -208,10 +267,11 @@ Index: src/sys/netax25/if_ax25.h
 +
 +#endif /* _KERNEL */
 +#endif /* _NETINET_IF_AX25_H_ */
-Index: src/sys/netax25/if_ax25subr.c
-===================================================================
+diff --git a/sys/netax25/if_ax25subr.c b/sys/netax25/if_ax25subr.c
+new file mode 100644
+index 00000000000..5f30ac68dbc
 --- /dev/null
-+++ src/sys/netax25/if_ax25subr.c
++++ b/sys/netax25/if_ax25subr.c
 @@ -0,0 +1,183 @@
 +
 +#include "bpfilter.h"
@@ -396,42 +456,6 @@ Index: src/sys/netax25/if_ax25subr.c
 +	*cp++ = '0' + (ssid % 10);
 +	return ax25buf;
 +}
-Index: src/lib/libc/Symbols.list
-===================================================================
---- src.orig/lib/libc/Symbols.list
-+++ src/lib/libc/Symbols.list
-@@ -1092,6 +1092,8 @@ _res
- _res_ext
- _res_opcodes
- _res_resultcodes
-+ax25_aton
-+ax25_ntoa
- dn_expand
- endhostent
- endnetent
-Index: src/sys/conf/GENERIC
-===================================================================
---- src.orig/sys/conf/GENERIC
-+++ src/sys/conf/GENERIC
-@@ -56,6 +56,7 @@ option		PIPEX		# Ppp IP EXtension, for n
- option		MROUTING	# Multicast router
- option		MPLS		# Multi-Protocol Label Switching
- #option		BFD		# Bi-directional Forwarding Detection
-+option		AX25		# AX.25
- 
- #mpath0		at root		# SCSI Multipathing
- #scsibus*	at mpath?
-Index: src/sys/conf/files
-===================================================================
---- src.orig/sys/conf/files
-+++ src/sys/conf/files
-@@ -1007,6 +1007,9 @@ file net/pfkeyv2.c			ipsec | tcp_signatu
- file net/pfkeyv2_parsemessage.c		ipsec | tcp_signature
- file net/pfkeyv2_convert.c		ipsec | tcp_signature
- 
-+# AX25
-+file netax25/if_ax25subr.c		ax25
-+
- # libx86emu
- file dev/x86emu/x86emu.c		x86emu
- file dev/x86emu/x86emu_util.c		x86emu
+-- 
+2.23.0
+

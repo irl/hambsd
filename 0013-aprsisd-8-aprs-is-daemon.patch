@@ -1,7 +1,36 @@
-Index: src/usr.sbin/aprsisd/Makefile
-===================================================================
+From c6ec6453c909b1efde2a205f31a9235f55c1a085 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:56:19 +0000
+Subject: [PATCH 13/13] aprsisd(8): aprs-is daemon
+
+---
+ usr.sbin/Makefile          |   2 +-
+ usr.sbin/aprsisd/Makefile  |   7 +
+ usr.sbin/aprsisd/aprsisd.8 |  90 +++++++
+ usr.sbin/aprsisd/aprsisd.c | 483 +++++++++++++++++++++++++++++++++++++
+ 4 files changed, 581 insertions(+), 1 deletion(-)
+ create mode 100644 usr.sbin/aprsisd/Makefile
+ create mode 100644 usr.sbin/aprsisd/aprsisd.8
+ create mode 100644 usr.sbin/aprsisd/aprsisd.c
+
+diff --git a/usr.sbin/Makefile b/usr.sbin/Makefile
+index a7f76f73800..3a080897d11 100644
+--- a/usr.sbin/Makefile
++++ b/usr.sbin/Makefile
+@@ -2,7 +2,7 @@
+ 
+ .include <bsd.own.mk>
+ 
+-SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd aprsd arp \
++SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd aprsd aprsisd arp \
+ 	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
+ 	dhcpd dhcrelay dhcrelay6 dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
+ 	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd iclcd identd \
+diff --git a/usr.sbin/aprsisd/Makefile b/usr.sbin/aprsisd/Makefile
+new file mode 100644
+index 00000000000..2ff5f13aaed
 --- /dev/null
-+++ src/usr.sbin/aprsisd/Makefile
++++ b/usr.sbin/aprsisd/Makefile
 @@ -0,0 +1,7 @@
 +#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
 +
@@ -10,10 +39,11 @@ Index: src/usr.sbin/aprsisd/Makefile
 +MAN=	aprsisd.8
 +
 +.include <bsd.prog.mk>
-Index: src/usr.sbin/aprsisd/aprsisd.8
-===================================================================
+diff --git a/usr.sbin/aprsisd/aprsisd.8 b/usr.sbin/aprsisd/aprsisd.8
+new file mode 100644
+index 00000000000..1ede18a7393
 --- /dev/null
-+++ src/usr.sbin/aprsisd/aprsisd.8
++++ b/usr.sbin/aprsisd/aprsisd.8
 @@ -0,0 +1,90 @@
 +.Dd October 13, 2019
 +.Dt APRSISD 8
@@ -105,10 +135,11 @@ Index: src/usr.sbin/aprsisd/aprsisd.8
 +daemon was written for the HamBSD project by
 +.An Iain R. Learmonth Aq Mt irl@fsfe.org
 +for the public domain.
-Index: src/usr.sbin/aprsisd/aprsisd.c
-===================================================================
+diff --git a/usr.sbin/aprsisd/aprsisd.c b/usr.sbin/aprsisd/aprsisd.c
+new file mode 100644
+index 00000000000..7eb62a0cc77
 --- /dev/null
-+++ src/usr.sbin/aprsisd/aprsisd.c
++++ b/usr.sbin/aprsisd/aprsisd.c
 @@ -0,0 +1,483 @@
 +
 +#include <ctype.h>
@@ -149,7 +180,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	sa_family_t		sax_family;
 +	struct ax25_addr	sax_addr;
 +	int8_t			sax_pathlen;
-+	struct ax25_addr	sax_path[AX25_DIGIS_MAX];
++	struct ax25_addr	sax_path[AX25_MAX_DIGIS];
 +};
 +
 +int isd, tap;
@@ -259,7 +290,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	strlcpy(dst, ax25_ntoa((struct ax25_addr *)&pkt[0]), 10);
 +	strlcpy(src, ax25_ntoa((struct ax25_addr *)&pkt[7]), 10);
 +	snprintf(tl, TNC2_MAXLINE, "%s>%s", src, dst);
-+	for (dn = 0; dn < AX25_DIGIS_MAX; ++dn) {
++	for (dn = 0; dn < AX25_MAX_DIGIS; ++dn) {
 +		if (pkt[(7 * (dn + 1)) + 6] & AX25_LAST_MASK)
 +			break;
 +		strlcat(tl, ",", TNC2_MAXLINE);
@@ -290,7 +321,7 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +	if ((pp = strchr(s, ':')) == NULL)
 +		return NULL;
 +	bp = ep = s;
-+	for (dn = -2 ; ep != pp && dn < AX25_DIGIS_MAX ; dn++) {
++	for (dn = -2 ; ep != pp && dn < AX25_MAX_DIGIS ; dn++) {
 +		for (ep = bp; ep < pp; ep++)
 +			if (*ep == '>' || *ep == ',')
 +				break;
@@ -593,3 +624,6 @@ Index: src/usr.sbin/aprsisd/aprsisd.c
 +		sleep(30);
 +	}
 +}
+-- 
+2.23.0
+

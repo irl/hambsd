@@ -1,0 +1,507 @@
+From 21865c879b9f8525cf3cded9672ac4040286f5d1 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:52:20 +0000
+Subject: [PATCH 04/13] axtap(4): ax25 tunnel pseudo-device
+
+---
+ etc/MAKEDEV.common              |   2 +
+ etc/etc.amd64/MAKEDEV.md        |   2 +
+ etc/etc.sparc64/MAKEDEV.md      |   2 +
+ share/man/man4/tap.4            |  11 ++-
+ sys/arch/amd64/amd64/conf.c     |   1 +
+ sys/arch/sparc64/sparc64/conf.c |   1 +
+ sys/net/bpf.c                   |   1 +
+ sys/net/if_tun.c                | 151 ++++++++++++++++++++++++++++++--
+ sys/net/if_tun.h                |   1 +
+ sys/net/if_types.h              |   3 +
+ sys/sys/conf.h                  |   1 +
+ 11 files changed, 165 insertions(+), 11 deletions(-)
+
+diff --git a/etc/MAKEDEV.common b/etc/MAKEDEV.common
+index 6c48a46a74a..8b16ae30efc 100644
+--- a/etc/MAKEDEV.common
++++ b/etc/MAKEDEV.common
+@@ -445,11 +445,13 @@ _mkdev(bpf, bpf, {-M bpf c major_bpf_c 0 600
+ 	M bpf0 c major_bpf_c 0 600-})dnl
+ _mkdev(tun, {-tun*-}, {-M tun$U c major_tun_c $U 600-}, 600)dnl
+ _mkdev(tap, {-tap*-}, {-M tap$U c major_tap_c $U 600-}, 600)dnl
++_mkdev(axtap, {-axtap*-}, {-M axtap$U c major_axtap_c $U 600-}, 600)dnl
+ _mkdev(switch, {-switch*-}, {-M switch$U c major_switch_c $U 600-}, 600)dnl
+ __devitem(speak, speaker, PC speaker,spkr)dnl
+ _mkdev(speak, speaker, {-M speaker c major_speak_c 0 600-})dnl
+ __devitem(tun, tun*, Network tunnel driver)dnl
+ __devitem(tap, tap*, Ethernet tunnel driver)dnl
++__devitem(axtap, axtap*, AX.25 tunnel driver)dnl
+ __devitem(switch, switch*, Switch driver)dnl
+ __devitem(rnd, *random, In-kernel random data source,random)dnl
+ _mkdev(rnd, *random, {-M urandom c major_rnd_c 0 644
+diff --git a/etc/etc.amd64/MAKEDEV.md b/etc/etc.amd64/MAKEDEV.md
+index 1aa4f673524..6f1858bffac 100644
+--- a/etc/etc.amd64/MAKEDEV.md
++++ b/etc/etc.amd64/MAKEDEV.md
+@@ -88,6 +88,7 @@ _DEV(rmidi, 52)
+ _DEV(speak, 27)
+ _DEV(tun, 40)
+ _DEV(tap, 93)
++_DEV(axtap, 98)
+ _DEV(tuner, 49)
+ _DEV(uk, 20)
+ _DEV(vi, 44)
+@@ -124,6 +125,7 @@ target(all, pty, 0)dnl
+ target(all, bio)dnl
+ target(all, tun, 0, 1, 2, 3)dnl
+ target(all, tap, 0, 1, 2, 3)dnl
++target(all, axtap, 0, 1, 2, 3)dnl
+ target(all, xy, 0, 1, 2, 3)dnl
+ target(all, rd, 0)dnl
+ target(all, cd, 0, 1)dnl
+diff --git a/etc/etc.sparc64/MAKEDEV.md b/etc/etc.sparc64/MAKEDEV.md
+index 037a3840aed..44f341bc712 100644
+--- a/etc/etc.sparc64/MAKEDEV.md
++++ b/etc/etc.sparc64/MAKEDEV.md
+@@ -122,6 +122,7 @@ _DEV(rmidi, 68)
+ _DEV(rnd, 119)
+ _DEV(tun, 111)
+ _DEV(tap, 135)
++_DEV(axtap, 137)
+ _DEV(uk, 60)
+ _DEV(uperf, 25)
+ _DEV(vi, 44)
+@@ -164,6 +165,7 @@ target(all, pty, 0)dnl
+ target(all, bio)dnl
+ target(all, tun, 0, 1, 2, 3)dnl
+ target(all, tap, 0, 1, 2, 3)dnl
++target(all, axtap, 0, 1, 2, 3)dnl
+ target(all, xy, 0, 1, 2, 3)dnl
+ target(all, rd, 0)dnl
+ target(all, cd, 0, 1)dnl
+diff --git a/share/man/man4/tap.4 b/share/man/man4/tap.4
+index 7f613f4ad8e..b7de79953c2 100644
+--- a/share/man/man4/tap.4
++++ b/share/man/man4/tap.4
+@@ -30,8 +30,9 @@
+ .Dt TAP 4
+ .Os
+ .Sh NAME
++.Nm axtap ,
+ .Nm tap
+-.Nd Ethernet tunnel pseudo-device
++.Nd Link-layer tunnel pseudo-devices
+ .Sh SYNOPSIS
+ .Cd "pseudo-device tun"
+ .Pp
+@@ -39,8 +40,10 @@
+ .In net/if_tun.h
+ .Sh DESCRIPTION
+ The
+-.Nm
+-driver provides an Ethernet interface pseudo-device.
++.Nm axtap
++and
++.Nm tap
++drivers provide an AX.25 and Ethernet interface pseudo-device respectively.
+ Packets sent to this interface can be read by a userland process
+ and processed as desired.
+ Packets written by the userland process are injected back into
+@@ -51,7 +54,7 @@ A
+ interface can be created at runtime using the
+ .Ic ifconfig tap Ns Ar N Ic create
+ command or by opening the character special device
+-.Pa /dev/tapN .
++.Pf /dev/ Op ax Pa tapN .
+ .Pp
+ Each device has an exclusive open property: it cannot be opened
+ if it is already open and in use by another process.
+diff --git a/sys/arch/amd64/amd64/conf.c b/sys/arch/amd64/amd64/conf.c
+index a8c10783f11..680abf4a561 100644
+--- a/sys/arch/amd64/amd64/conf.c
++++ b/sys/arch/amd64/amd64/conf.c
+@@ -297,6 +297,7 @@ struct cdevsw	cdevsw[] =
+ 	cdev_pvbus_init(NPVBUS,pvbus),	/* 95: pvbus(4) control interface */
+ 	cdev_ipmi_init(NIPMI,ipmi),	/* 96: ipmi */
+ 	cdev_switch_init(NSWITCH,switch), /* 97: switch(4) control interface */
++	cdev_tun_init(NTUN,axtap),	/* 98: AX.25 network tunnel */
+ };
+ int	nchrdev = nitems(cdevsw);
+ 
+diff --git a/sys/arch/sparc64/sparc64/conf.c b/sys/arch/sparc64/sparc64/conf.c
+index e0e45b7f9f4..fd506f8aadd 100644
+--- a/sys/arch/sparc64/sparc64/conf.c
++++ b/sys/arch/sparc64/sparc64/conf.c
+@@ -292,6 +292,7 @@ struct cdevsw	cdevsw[] =
+ 	cdev_fuse_init(NFUSE,fuse),	/* 134: fuse */
+ 	cdev_tun_init(NTUN,tap),	/* 135: Ethernet network tunnel */
+ 	cdev_switch_init(NSWITCH,switch), /* 136: switch(4) control interface */
++	cdev_tun_init(NTUN,axtap),	/* 137: AX.25 network tunnel */
+ };
+ int	nchrdev = nitems(cdevsw);
+ 
+diff --git a/sys/net/bpf.c b/sys/net/bpf.c
+index 365ce900860..5b5a4bd3c48 100644
+--- a/sys/net/bpf.c
++++ b/sys/net/bpf.c
+@@ -181,6 +181,7 @@ bpf_movein(struct uio *uio, struct bpf_d *d, struct mbuf **mp,
+ 		hlen = 0;
+ 		break;
+ 
++	case DLT_AX25:
+ 	case DLT_RAW:
+ 	case DLT_NULL:
+ 		sockp->sa_family = AF_UNSPEC;
+diff --git a/sys/net/if_tun.c b/sys/net/if_tun.c
+index a79bc270e22..8bb9b29baa3 100644
+--- a/sys/net/if_tun.c
++++ b/sys/net/if_tun.c
+@@ -126,6 +126,14 @@ int	tapwrite(dev_t, struct uio *, int);
+ int	tappoll(dev_t, int, struct proc *);
+ int	tapkqfilter(dev_t, struct knote *);
+ 
++int	axtapopen(dev_t, int, int, struct proc *);
++int	axtapclose(dev_t, int, int, struct proc *);
++int	axtapioctl(dev_t, u_long, caddr_t, int, struct proc *);
++int	axtapread(dev_t, struct uio *, int);
++int	axtapwrite(dev_t, struct uio *, int);
++int	axtappoll(dev_t, int, struct proc *);
++int	axtapkqfilter(dev_t, struct knote *);
++
+ int	tun_dev_open(struct tun_softc *, int, int, struct proc *);
+ int	tun_dev_close(struct tun_softc *, int, int, struct proc *);
+ int	tun_dev_ioctl(struct tun_softc *, u_long, caddr_t, int, struct proc *);
+@@ -140,10 +148,12 @@ int	tun_output(struct ifnet *, struct mbuf *, struct sockaddr *,
+ 	    struct rtentry *);
+ int	tun_clone_create(struct if_clone *, int);
+ int	tap_clone_create(struct if_clone *, int);
++int	axtap_clone_create(struct if_clone *, int);
+ int	tun_create(struct if_clone *, int, int);
+ int	tun_clone_destroy(struct ifnet *);
+ static inline struct	tun_softc *tun_lookup(int);
+ static inline struct	tun_softc *tap_lookup(int);
++static inline struct	tun_softc *axtap_lookup(int);
+ void	tun_wakeup(struct tun_softc *);
+ int	tun_init(struct tun_softc *);
+ void	tun_start(struct ifnet *);
+@@ -163,6 +173,7 @@ LIST_HEAD(tun_list, tun_softc);
+ 
+ struct tun_list tun_softc_list = LIST_HEAD_INITIALIZER(tun_softc_list);
+ struct tun_list tap_softc_list = LIST_HEAD_INITIALIZER(tap_softc_list);
++struct tun_list axtap_softc_list = LIST_HEAD_INITIALIZER(axtap_softc_list);
+ 
+ struct if_clone tun_cloner =
+     IF_CLONE_INITIALIZER("tun", tun_clone_create, tun_clone_destroy);
+@@ -170,11 +181,15 @@ struct if_clone tun_cloner =
+ struct if_clone tap_cloner =
+     IF_CLONE_INITIALIZER("tap", tap_clone_create, tun_clone_destroy);
+ 
++struct if_clone axtap_cloner =
++    IF_CLONE_INITIALIZER("axtap", axtap_clone_create, tun_clone_destroy);
++
+ void
+ tunattach(int n)
+ {
+ 	if_clone_attach(&tun_cloner);
+ 	if_clone_attach(&tap_cloner);
++	if_clone_attach(&axtap_cloner);
+ #ifdef PIPEX
+ 	pipex_init();
+ #endif
+@@ -221,6 +236,12 @@ tun_list_insert(struct tun_list *tl, struct tun_softc *tp)
+ 	return (0);
+ }
+ 
++int
++axtap_clone_create(struct if_clone *ifc, int unit)
++{
++	return (tun_create(ifc, unit, TUN_AX25));
++}
++
+ int
+ tun_create(struct if_clone *ifc, int unit, int flags)
+ {
+@@ -246,7 +267,7 @@ tun_create(struct if_clone *ifc, int unit, int flags)
+ 	ifp->if_link_state = LINK_STATE_DOWN;
+ 	IFQ_SET_MAXLEN(&ifp->if_snd, IFQ_MAXLEN);
+ 
+-	if ((flags & TUN_LAYER2) == 0) {
++	if ((flags & (TUN_LAYER2 | TUN_AX25)) == 0) {
+ 		if (tun_list_insert(&tun_softc_list, tp) != 0)
+ 			goto exists;
+ 
+@@ -262,6 +283,24 @@ tun_create(struct if_clone *ifc, int unit, int flags)
+ #if NBPFILTER > 0
+ 		bpfattach(&ifp->if_bpf, ifp, DLT_LOOP, sizeof(u_int32_t));
+ #endif
++	} else if (flags & TUN_AX25) {
++		if (tun_list_insert(&axtap_softc_list, tp) != 0)
++			goto exists;
++
++		tp->sc_flags |= TUN_AX25;
++		ifp->if_flags =
++		    (IFF_BROADCAST|IFF_MULTICAST);
++		ifp->if_type = IFT_AX25;
++	        ifp->if_addrlen = sizeof(u_int8_t) * 7;
++	        ifp->if_hdrlen = 0;
++	        ifp->if_mtu = ETHERMTU;
++
++		if_attach(ifp);
++		if_alloc_sadl(ifp);
++#if NBPFILTER > 0
++		bpfattach(&ifp->if_bpf, ifp, DLT_AX25, 0);
++#endif
++
+ 	} else {
+ 		if (tun_list_insert(&tap_softc_list, tp) != 0)
+ 			goto exists;
+@@ -277,7 +316,7 @@ tun_create(struct if_clone *ifc, int unit, int flags)
+ 	}
+ 
+ #ifdef PIPEX
+-	if ((tp->sc_flags & TUN_LAYER2) == 0)
++	if ((tp->sc_flags & (TUN_LAYER2 | TUN_AX25)) == 0)
+ 		pipex_iface_init(&tp->sc_pipex_iface, ifp);
+ #endif
+ 
+@@ -294,7 +333,7 @@ tun_clone_destroy(struct ifnet *ifp)
+ 	int			 s;
+ 
+ #ifdef PIPEX
+-	if ((tp->sc_flags & TUN_LAYER2) == 0)
++	if ((tp->sc_flags & (TUN_LAYER2 | TUN_AX25)) == 0)
+ 		pipex_iface_fini(&tp->sc_pipex_iface);
+ #endif
+ 	tun_wakeup(tp);
+@@ -326,6 +365,12 @@ tap_lookup(int unit)
+ 	return (tun_list_lookup(&tap_softc_list, unit));
+ }
+ 
++static inline struct tun_softc *
++axtap_lookup(int unit)
++{
++	return (tun_list_lookup(&axtap_softc_list, unit));
++}
++
+ /*
+  * tunnel open - must be superuser & the device must be
+  * configured in
+@@ -388,6 +433,35 @@ tapopen(dev_t dev, int flag, int mode, struct proc *p)
+ 	return (tun_dev_open(tp, flag, mode, p));
+ }
+ 
++int
++axtapopen(dev_t dev, int flag, int mode, struct proc *p)
++{
++	struct tun_softc *tp;
++	unsigned int rdomain = rtable_l2(p->p_p->ps_rtableid);
++
++	if ((tp = axtap_lookup(minor(dev))) == NULL) {	/* create on demand */
++		char	xname[IFNAMSIZ];
++		int	error;
++
++		snprintf(xname, sizeof(xname), "%s%d", "axtap", minor(dev));
++		error = if_clone_create(xname, rdomain);
++		switch (error) {
++		case EEXIST:
++			/* we lost a race to create */
++			/* FALLTHROUGH */
++		case 0:
++			if ((tp = axtap_lookup(minor(dev))) == NULL)
++				return (ENXIO);
++			tp->sc_flags &= ~TUN_STAYUP;
++			break;
++		default:
++			return (error);
++		}
++	}
++
++	return (tun_dev_open(tp, flag, mode, p));
++}
++
+ int
+ tun_dev_open(struct tun_softc *tp, int flag, int mode, struct proc *p)
+ {
+@@ -433,6 +507,16 @@ tapclose(dev_t dev, int flag, int mode, struct proc *p)
+ 	return (tun_dev_close(tp, flag, mode, p));
+ }
+ 
++int
++axtapclose(dev_t dev, int flag, int mode, struct proc *p)
++{
++	struct tun_softc	*tp;
++
++	if ((tp = axtap_lookup(minor(dev))) == NULL)
++		return (ENXIO);
++	return (tun_dev_close(tp, flag, mode, p));
++}
++
+ int
+ tun_dev_close(struct tun_softc *tp, int flag, int mode, struct proc *p)
+ {
+@@ -580,6 +664,9 @@ tun_output(struct ifnet *ifp, struct mbuf *m0, struct sockaddr *dst,
+ 		return (EHOSTDOWN);
+ 	}
+ 
++	if (tp->sc_flags & TUN_AX25)
++		return (if_enqueue(ifp, m0));
++
+ 	if (tp->sc_flags & TUN_LAYER2)
+ 		return (ether_output(ifp, m0, dst, rt));
+ 
+@@ -649,6 +736,16 @@ tapioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
+ 	return (tun_dev_ioctl(tp, cmd, data, flag, p));
+ }
+ 
++int
++axtapioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
++{
++	struct tun_softc *tp;
++
++	if ((tp = axtap_lookup(minor(dev))) == NULL)
++		return (ENXIO);
++	return (tun_dev_ioctl(tp, cmd, data, flag, p));
++}
++
+ int
+ tun_dev_ioctl(struct tun_softc *tp, u_long cmd, caddr_t data, int flag,
+     struct proc *p)
+@@ -768,6 +865,16 @@ tapread(dev_t dev, struct uio *uio, int ioflag)
+ 	return (tun_dev_read(tp, uio, ioflag));
+ }
+ 
++int
++axtapread(dev_t dev, struct uio *uio, int ioflag)
++{
++	struct tun_softc *tp;
++
++	if ((tp = axtap_lookup(minor(dev))) == NULL)
++		return (ENXIO);
++	return (tun_dev_read(tp, uio, ioflag));
++}
++
+ int
+ tun_dev_read(struct tun_softc *tp, struct uio *uio, int ioflag)
+ {
+@@ -815,7 +922,7 @@ tun_dev_read(struct tun_softc *tp, struct uio *uio, int ioflag)
+ 		}
+ 	} while (m0 == NULL);
+ 
+-	if (tp->sc_flags & TUN_LAYER2) {
++	if (tp->sc_flags & (TUN_LAYER2 | TUN_AX25)) {
+ #if NBPFILTER > 0
+ 		if (ifp->if_bpf)
+ 			bpf_mtap(ifp->if_bpf, m0, BPF_DIRECTION_OUT);
+@@ -863,6 +970,16 @@ tapwrite(dev_t dev, struct uio *uio, int ioflag)
+ 	return (tun_dev_write(tp, uio, ioflag));
+ }
+ 
++int
++axtapwrite(dev_t dev, struct uio *uio, int ioflag)
++{
++	struct tun_softc *tp;
++
++	if ((tp = axtap_lookup(minor(dev))) == NULL)
++		return (ENXIO);
++	return (tun_dev_write(tp, uio, ioflag));
++}
++
+ int
+ tun_dev_write(struct tun_softc *tp, struct uio *uio, int ioflag)
+ {
+@@ -898,7 +1015,7 @@ tun_dev_write(struct tun_softc *tp, struct uio *uio, int ioflag)
+ 
+ 	top = NULL;
+ 	mp = &top;
+-	if (tp->sc_flags & TUN_LAYER2) {
++	if (tp->sc_flags & (TUN_LAYER2 | TUN_AX25)) {
+ 		/*
+ 		 * Pad so that IP header is correctly aligned
+ 		 * this is necessary for all strict aligned architectures.
+@@ -937,7 +1054,7 @@ tun_dev_write(struct tun_softc *tp, struct uio *uio, int ioflag)
+ 
+ 	top->m_pkthdr.len = tlen;
+ 
+-	if (tp->sc_flags & TUN_LAYER2) {
++	if (tp->sc_flags & (TUN_LAYER2 | TUN_AX25)) {
+ 		struct mbuf_list ml = MBUF_LIST_INITIALIZER();
+ 
+ 		ml_enqueue(&ml, top);
+@@ -1014,6 +1131,16 @@ tappoll(dev_t dev, int events, struct proc *p)
+ 	return (tun_dev_poll(tp, events, p));
+ }
+ 
++int
++axtappoll(dev_t dev, int events, struct proc *p)
++{
++	struct tun_softc *tp;
++
++	if ((tp = axtap_lookup(minor(dev))) == NULL)
++		return (POLLERR);
++	return (tun_dev_poll(tp, events, p));
++}
++
+ int
+ tun_dev_poll(struct tun_softc *tp, int events, struct proc *p)
+ {
+@@ -1066,6 +1193,16 @@ tapkqfilter(dev_t dev, struct knote *kn)
+ 	return (tun_dev_kqfilter(tp, kn));
+ }
+ 
++int
++axtapkqfilter(dev_t dev, struct knote *kn)
++{
++	struct tun_softc *tp;
++
++	if ((tp = axtap_lookup(minor(dev))) == NULL)
++		return (ENXIO);
++	return (tun_dev_kqfilter(tp, kn));
++}
++
+ int
+ tun_dev_kqfilter(struct tun_softc *tp, struct knote *kn)
+ {
+@@ -1180,7 +1317,7 @@ tun_link_state(struct tun_softc *tp)
+ 	int link_state = LINK_STATE_DOWN;
+ 
+ 	if (tp->sc_flags & TUN_OPEN) {
+-		if (tp->sc_flags & TUN_LAYER2)
++		if (tp->sc_flags & (TUN_LAYER2 | TUN_AX25))
+ 			link_state = LINK_STATE_FULL_DUPLEX;
+ 		else
+ 			link_state = LINK_STATE_UP;
+diff --git a/sys/net/if_tun.h b/sys/net/if_tun.h
+index eea043e2596..c1db33f5f33 100644
+--- a/sys/net/if_tun.h
++++ b/sys/net/if_tun.h
+@@ -42,6 +42,7 @@
+ #define TUN_BRDADDR	0x0200
+ #define TUN_STAYUP	0x0400
+ #define TUN_LAYER2	0x0800
++#define TUN_AX25	0x8000 /* HamBSD specific */
+ 
+ #define	TUN_READY	(TUN_OPEN | TUN_INITED)
+ 
+diff --git a/sys/net/if_types.h b/sys/net/if_types.h
+index dbd9e84a7fe..2c597212871 100644
+--- a/sys/net/if_types.h
++++ b/sys/net/if_types.h
+@@ -270,4 +270,7 @@
+ #define IFT_PFLOW	0xf9		/* pflow */
+ #define IFT_MBIM	0xfa		/* Mobile Broadband Interface Model */
+ 
++/* HamBSD types... even more badly handled than above */
++#define IFT_AX25	0xff		/* AX.25 Layer 2 */
++
+ #endif /* _NET_IF_TYPES_H_ */
+diff --git a/sys/sys/conf.h b/sys/sys/conf.h
+index 48118f7f670..af3aedea9e7 100644
+--- a/sys/sys/conf.h
++++ b/sys/sys/conf.h
+@@ -583,6 +583,7 @@ cdev_decl(pf);
+ 
+ cdev_decl(tun);
+ cdev_decl(tap);
++cdev_decl(axtap);
+ cdev_decl(switch);
+ cdev_decl(pppx);
+ 
+-- 
+2.23.0
+

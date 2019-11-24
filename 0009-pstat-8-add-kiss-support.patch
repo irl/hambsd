@@ -1,0 +1,47 @@
+From 60cfbf06b9875f87539420b1c4d5a23e1dedf174 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:51:07 +0000
+Subject: [PATCH 09/13] pstat(8): add kiss support
+
+---
+ usr.sbin/pstat/pstat.8 | 7 +++++--
+ usr.sbin/pstat/pstat.c | 3 +++
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/usr.sbin/pstat/pstat.8 b/usr.sbin/pstat/pstat.8
+index d2631f834ff..30cdd9dbfcb 100644
+--- a/usr.sbin/pstat/pstat.8
++++ b/usr.sbin/pstat/pstat.8
+@@ -219,10 +219,13 @@ for NMEADISC (see
+ .Ql msts
+ for MSTSDISC (see
+ .Xr msts 4 ) ,
+-and
+ .Ql endrun
+ for ENDRUNDISC (see
+-.Xr endrun 4 ) .
++.Xr endrun 4 ) ,
++and
++.Ql kiss
++for KISSDISC (see
++.Xr kiss 4 ) .
+ .El
+ .It Fl v
+ Print the active vnodes.
+diff --git a/usr.sbin/pstat/pstat.c b/usr.sbin/pstat/pstat.c
+index 986dee90b6f..9a7dfe0844e 100644
+--- a/usr.sbin/pstat/pstat.c
++++ b/usr.sbin/pstat/pstat.c
+@@ -1005,6 +1005,9 @@ ttyprt(struct itty *tp)
+ 	case ENDRUNDISC:
+ 		(void)printf("endrun\n");
+ 		break;
++	case KISSDISC:
++		(void)printf("kiss\n");
++		break;
+ 	default:
+ 		(void)printf("%d\n", tp->t_line);
+ 		break;
+-- 
+2.23.0
+

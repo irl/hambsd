@@ -1,0 +1,55 @@
+From 86be22a917969bd385d3f307813ea8d49453366f Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:48:23 +0000
+Subject: [PATCH 01/13] pstat(8): display text for msts/endrun line discs
+
+---
+ usr.sbin/pstat/pstat.8 | 12 +++++++++---
+ usr.sbin/pstat/pstat.c |  6 ++++++
+ 2 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/usr.sbin/pstat/pstat.8 b/usr.sbin/pstat/pstat.8
+index d523b00144a..d2631f834ff 100644
+--- a/usr.sbin/pstat/pstat.8
++++ b/usr.sbin/pstat/pstat.8
+@@ -212,11 +212,17 @@ TTYDISC (see
+ .Xr termios 4 ) ,
+ .Ql ppp
+ for PPPDISC (see
+-.Xr ppp 4 )
+-and
++.Xr ppp 4 ) ,
+ .Ql nmea
+ for NMEADISC (see
+-.Xr nmea 4 ) .
++.Xr nmea 4 ) ,
++.Ql msts
++for MSTSDISC (see
++.Xr msts 4 ) ,
++and
++.Ql endrun
++for ENDRUNDISC (see
++.Xr endrun 4 ) .
+ .El
+ .It Fl v
+ Print the active vnodes.
+diff --git a/usr.sbin/pstat/pstat.c b/usr.sbin/pstat/pstat.c
+index 1684975c57f..986dee90b6f 100644
+--- a/usr.sbin/pstat/pstat.c
++++ b/usr.sbin/pstat/pstat.c
+@@ -999,6 +999,12 @@ ttyprt(struct itty *tp)
+ 	case NMEADISC:
+ 		(void)printf("nmea\n");
+ 		break;
++	case MSTSDISC:
++		(void)printf("msts\n");
++		break;
++	case ENDRUNDISC:
++		(void)printf("endrun\n");
++		break;
+ 	default:
+ 		(void)printf("%d\n", tp->t_line);
+ 		break;
+-- 
+2.23.0
+

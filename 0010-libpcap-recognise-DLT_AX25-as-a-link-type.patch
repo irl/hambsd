@@ -1,0 +1,32 @@
+From 20e32e50b620d6926e5fcd9f48a2d6ec7a4142bc Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sun, 24 Nov 2019 12:08:24 +0000
+Subject: [PATCH 10/13] libpcap: recognise DLT_AX25 as a link type
+
+---
+ lib/libpcap/gencode.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/lib/libpcap/gencode.c b/lib/libpcap/gencode.c
+index 44d791b0644..91e5ec487c3 100644
+--- a/lib/libpcap/gencode.c
++++ b/lib/libpcap/gencode.c
+@@ -795,6 +795,15 @@ init_linktype(type)
+ 		off_nl = 12;
+ 		return;
+ 
++	case DLT_AX25:
++		/* 
++		 * The header is variable length, but we only consider the
++		 * first two addresses in our driver.
++		 */
++		off_linktype = -1;
++		off_nl = 14;
++		return;
++
+ 	case DLT_USBPCAP:
+ 		/* FALLTHROUGH */
+ 	case DLT_RAW:
+-- 
+2.23.0
+

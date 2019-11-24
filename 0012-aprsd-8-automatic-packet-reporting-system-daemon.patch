@@ -1,7 +1,106 @@
-Index: src/usr.sbin/aprsd/Makefile
-===================================================================
+From 8bba8772abf526659bd780dff888c435f79cd945 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:55:51 +0000
+Subject: [PATCH 12/13] aprsd(8): automatic packet reporting system daemon
+
+---
+ etc/Makefile                |   2 +-
+ etc/rc                      |   2 +-
+ etc/rc.conf                 |   1 +
+ etc/rc.d/aprsd              |  11 +
+ usr.sbin/Makefile           |   2 +-
+ usr.sbin/aprsd/Makefile     |   9 +
+ usr.sbin/aprsd/aprsd.8      |  86 +++++
+ usr.sbin/aprsd/aprsd.c      | 547 +++++++++++++++++++++++++++++++
+ usr.sbin/aprsd/aprsd.conf.5 | 140 ++++++++
+ usr.sbin/aprsd/aprsd.h      |  35 ++
+ usr.sbin/aprsd/gps.c        |  68 ++++
+ usr.sbin/aprsd/gps.h        |   7 +
+ usr.sbin/aprsd/parse.y      | 625 ++++++++++++++++++++++++++++++++++++
+ 13 files changed, 1532 insertions(+), 3 deletions(-)
+ create mode 100644 etc/rc.d/aprsd
+ create mode 100644 usr.sbin/aprsd/Makefile
+ create mode 100644 usr.sbin/aprsd/aprsd.8
+ create mode 100644 usr.sbin/aprsd/aprsd.c
+ create mode 100644 usr.sbin/aprsd/aprsd.conf.5
+ create mode 100644 usr.sbin/aprsd/aprsd.h
+ create mode 100644 usr.sbin/aprsd/gps.c
+ create mode 100644 usr.sbin/aprsd/gps.h
+ create mode 100644 usr.sbin/aprsd/parse.y
+
+diff --git a/etc/Makefile b/etc/Makefile
+index 4f378fd4f6f..6839285768f 100644
+--- a/etc/Makefile
++++ b/etc/Makefile
+@@ -57,7 +57,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.conf eigrpd.conf hostapd.conf \
+ 	ripd.conf sasyncd.conf snmpd.conf vm.conf ypldap.conf
+ 
+ # -r-xr-xr-x
+-RCDAEMONS=amd apmd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
++RCDAEMONS=amd apmd aprsd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
+ 	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd iclcd identd ifstated \
+ 	iked inetd isakmpd iscsid ldapd ldattach ldomd ldpd lockd \
+ 	lpd mopd mountd mrouted nfsd npppd nsd ntpd ospf6d ospfd \
+diff --git a/etc/rc b/etc/rc
+index 90731e1e841..f2b7f202460 100644
+--- a/etc/rc
++++ b/etc/rc
+@@ -585,7 +585,7 @@ start_daemon ldomd sshd switchd snmpd ldpd ripd ospfd ospf6d bgpd ifstated
+ start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
+ start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
+ start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
+-start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
++start_daemon rbootd mopd vmd spamd spamlogd sndiod aprsd iclcd
+ echo '.'
+ 
+ # If rc.firsttime exists, run it just once, and make sure it is deleted.
+diff --git a/etc/rc.conf b/etc/rc.conf
+index baad5ed773d..d0c5e4857c1 100644
+--- a/etc/rc.conf
++++ b/etc/rc.conf
+@@ -14,6 +14,7 @@
+ # Set them to "" to run them with the default flags.
+ # Otherwise, these variables override the default flags.
+ apmd_flags=NO
++aprsd_flags=NO
+ bgpd_flags=NO
+ bootparamd_flags=NO
+ cron_flags=
+diff --git a/etc/rc.d/aprsd b/etc/rc.d/aprsd
+new file mode 100644
+index 00000000000..47e93f59852
 --- /dev/null
-+++ src/usr.sbin/aprsd/Makefile
++++ b/etc/rc.d/aprsd
+@@ -0,0 +1,11 @@
++#!/bin/ksh
++#
++# $OpenBSD$
++
++daemon="/usr/sbin/aprsd"
++
++. /etc/rc.d/rc.subr
++
++rc_reload=NO
++
++rc_cmd $1
+diff --git a/usr.sbin/Makefile b/usr.sbin/Makefile
+index f7f20012a85..a7f76f73800 100644
+--- a/usr.sbin/Makefile
++++ b/usr.sbin/Makefile
+@@ -2,7 +2,7 @@
+ 
+ .include <bsd.own.mk>
+ 
+-SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp \
++SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd aprsd arp \
+ 	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
+ 	dhcpd dhcrelay dhcrelay6 dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
+ 	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd iclcd identd \
+diff --git a/usr.sbin/aprsd/Makefile b/usr.sbin/aprsd/Makefile
+new file mode 100644
+index 00000000000..476cd1deaed
+--- /dev/null
++++ b/usr.sbin/aprsd/Makefile
 @@ -0,0 +1,9 @@
 +#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
 +
@@ -12,10 +111,11 @@ Index: src/usr.sbin/aprsd/Makefile
 +CFLAGS= -I${.CURDIR}
 +
 +.include <bsd.prog.mk>
-Index: src/usr.sbin/aprsd/aprsd.8
-===================================================================
+diff --git a/usr.sbin/aprsd/aprsd.8 b/usr.sbin/aprsd/aprsd.8
+new file mode 100644
+index 00000000000..f417e80bc47
 --- /dev/null
-+++ src/usr.sbin/aprsd/aprsd.8
++++ b/usr.sbin/aprsd/aprsd.8
 @@ -0,0 +1,86 @@
 +.Dd October 11, 2019
 +.Dt APRSD 8
@@ -103,11 +203,12 @@ Index: src/usr.sbin/aprsd/aprsd.8
 +It is not currently possible to broadcast position reports on multiple
 +interfaces with a single instance.
 +It is however possible to manually start multiple instances.
-Index: src/usr.sbin/aprsd/aprsd.c
-===================================================================
+diff --git a/usr.sbin/aprsd/aprsd.c b/usr.sbin/aprsd/aprsd.c
+new file mode 100644
+index 00000000000..ef48c217769
 --- /dev/null
-+++ src/usr.sbin/aprsd/aprsd.c
-@@ -0,0 +1,544 @@
++++ b/usr.sbin/aprsd/aprsd.c
+@@ -0,0 +1,547 @@
 +/*
 + * aprsd - automatic packet reporting system daemon
 + *
@@ -555,7 +656,7 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	conf.num_beacons = 0;
 +
 +	/* option defaults */
-+	conffile = "-";
++	conffile = "/etc/aprsd.conf";
 +	daemon = 1;
 +	device = "axkiss0";
 +	skipdelay = 0;
@@ -588,6 +689,9 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	}
 +	argc -= optind;
 +	argv += optind;
++
++	if (argc == 0)
++		fatal("no interfaces specified");
 +
 +	if (parse_config(conffile, &conf) == -1)
 +		fatal("could not parse config");
@@ -652,10 +756,198 @@ Index: src/usr.sbin/aprsd/aprsd.c
 +	}
 +	aprs_beacon_loop(conf.num_beacons, beacons);
 +}
-Index: src/usr.sbin/aprsd/gps.c
-===================================================================
+diff --git a/usr.sbin/aprsd/aprsd.conf.5 b/usr.sbin/aprsd/aprsd.conf.5
+new file mode 100644
+index 00000000000..bb812bbfa5b
 --- /dev/null
-+++ src/usr.sbin/aprsd/gps.c
++++ b/usr.sbin/aprsd/aprsd.conf.5
+@@ -0,0 +1,140 @@
++.\" Copyright (c) 2019 Iain R. Learmonth.
++.\" Copyright (c) 2004 Claudio Jeker <claudio@openbsd.org>
++.\" Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
++.\" Copyright (c) 2002 Daniel Hartmeier <dhartmei@openbsd.org>
++.\"
++.\" Permission to use, copy, modify, and distribute this software for any
++.\" purpose with or without fee is hereby granted, provided that the above
++.\" copyright notice and this permission notice appear in all copies.
++.\"
++.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++.\"
++.Dd October 18, 2019
++.Dt APRSD.CONF 5
++.Os
++.Sh NAME
++.Nm aprsd.conf
++.Nd Automatic Packet Reporting System daemon configuration file
++.Sh DESCRIPTION
++The
++.Xr aprsd 8
++daemon implements an Automatic Packet Reporting System (APRS) tracker and
++digipeater.
++.Pp
++The
++.Nm
++config file is divided into the following main sections:
++.Bl -tag -width xxxx
++.It Sx MACROS
++User-defined variables may be defined and used later, simplifying the
++configuration file.
++.It Sx BEACON CONFIGURATION
++Periodic beacons for position and object reports are set in this section.
++.It Sx DIGIPEATER CONFIGURATION
++Filter rules for digipeating packets are set in this section.
++.El
++.Pp
++The current line can be extended over multiple lines using a backslash
++.Pq Sq \e .
++Comments can be put anywhere in the file using a hash mark
++.Pq Sq # ,
++and extend to the end of the current line.
++Care should be taken when commenting out multi-line text:
++the comment is effective until the end of the entire block.
++.Pp
++Argument names not beginning with a letter, digit, or underscore
++must be quoted.
++.Sh MACROS
++Macros can be defined that will later be expanded in context.
++Macro names must start with a letter, digit, or underscore,
++and may contain any of those characters.
++Macro names may not be reserved words (for example,
++.Ic beacon ,
++.Ic sensor ,
++or
++.Ic longitude ) .
++Macros are not expanded inside quotes.
++.Pp
++For example:
++.Bd -literal -offset indent
++gps="nmea0"
++beacon position sensor $gps
++.Ed
++.Sh BEACON CONFIGURATION
++These define beacons to be transmitted periodically by
++.Xr aprsd 8 .
++.Bl -tag -width Ds
++.It Xo
++.Ic beacon Cm position Op Cm no-timestamp
++.Po
++.Cm sensor Ar sensor | Cm latitude Ar latitude Op Cm north | Cm south
++.Cm longitude Ar longitude Op Cm east | Cm west
++.Pc
++.Op Cm comment Ar comment
++.Op Cm interval Ar interval
++.Xc
++.Pp
++Register a position beacon to be transmitted every
++.Ar interval
++seconds using either the GPS location given by
++.Ar sensor
++or the fixed
++.Ar latitude
++and
++.Ar longitude .
++Fixed positions
++.Pf ( Ar latitude
++and
++.Ar longitude )
++are given in microdegrees.
++To convert degrees to microdegrees simply multiply by 10^6.
++The number must be positive.
++To indicate a negative latitude or longitude, use the
++.Cm south
++or
++.Cm west
++keywords respectively.
++.Pp
++If the
++.Cm no-timestamp
++option is given then the beacon will use the format that does not contain a
++timestamp, which can be useful for machines that do not have a real-time clock.
++The comment can be set as a free-text field to be included in the position
++report.
++.It Xo
++.Ic beacon Cm object Cm name Ar name
++.Po
++.Cm sensor Ar sensor | Cm latitude Ar latitude Op Cm north | Cm south
++.Cm longitude Ar longitude Op Cm east | Cm west
++.Pc
++.Op Cm comment Ar comment
++.Op Cm interval Ar interval
++.Xc
++.Pp
++Register an object beacon.
++Most of the modifiers for an object beacon behave in the same way as for a
++position beacon.
++.Pp
++Every object beacon must have a name, which must be no more than 6 characters
++and contain only letters and numbers.
++The comment can be set as a free-text field to be included in the object position
++report.
++.El
++.Sh FILES
++.Bl -tag -width "/etc/aprsd.conf" -compact
++.It Pa /etc/aprsd.conf
++.El
++.Sh SEE ALSO
++.Xr ax25 4 ,
++.Xr aprsd 8 ,
++.Xr aprsisd 8
++.Sh HISTORY
++The
++.Nm
++file format first appeared in HamBSD XXX.
+diff --git a/usr.sbin/aprsd/aprsd.h b/usr.sbin/aprsd/aprsd.h
+new file mode 100644
+index 00000000000..3055f5ae11f
+--- /dev/null
++++ b/usr.sbin/aprsd/aprsd.h
+@@ -0,0 +1,35 @@
++
++#define APRS_MAXLEN 256
++
++#define BEACONT_PON 1 /* position beacon, no timestamp */
++#define BEACONT_POT 2 /* position beacon, with timestamp */
++#define BEACONT_OBJ 3 /* object beacon */
++
++#define BEACONF_LATSET	0x01	/* a fixed latitude is defined */
++#define BEACONF_LONSET	0x02	/* a fixed longitude is defined */
++#define BEACONF_POSSET (BEACONF_LATSET | BEACONF_LONSET)
++#define BEACONF_ALTSET	0x04	/* a fixed altitude is defined */
++#define BEACONF_SOUTH	0x08	/* the fixed latitude is negative */
++#define BEACONF_WEST	0x10	/* the fixed longitude in negative */
++
++struct beacon_config {
++	long long latitude;
++	long long longitude;
++	long altitude;
++	int type;
++	int interval;
++	int flags;
++	char *comment;
++	char *name;
++	char *sensor;
++};
++
++#define MAX_BEACONS 20
++
++struct aprsd_config {
++	int num_beacons;
++	struct beacon_config *beacons[MAX_BEACONS];
++};
++
++/* parse.y */
++int parse_config(char *, struct aprsd_config *);
+diff --git a/usr.sbin/aprsd/gps.c b/usr.sbin/aprsd/gps.c
+new file mode 100644
+index 00000000000..68cf2f6d73b
+--- /dev/null
++++ b/usr.sbin/aprsd/gps.c
 @@ -0,0 +1,68 @@
 +
 +#include <string.h>
@@ -725,10 +1017,11 @@ Index: src/usr.sbin/aprsd/gps.c
 +	}
 +	return lat + lon;
 +}
-Index: src/usr.sbin/aprsd/gps.h
-===================================================================
+diff --git a/usr.sbin/aprsd/gps.h b/usr.sbin/aprsd/gps.h
+new file mode 100644
+index 00000000000..5c9d8a404a2
 --- /dev/null
-+++ src/usr.sbin/aprsd/gps.h
++++ b/usr.sbin/aprsd/gps.h
 @@ -0,0 +1,7 @@
 +
 +struct gps_position {
@@ -737,117 +1030,11 @@ Index: src/usr.sbin/aprsd/gps.h
 +};
 +
 +int gps_get_position(struct gps_position *, char *);
-Index: src/usr.sbin/Makefile
-===================================================================
---- src.orig/usr.sbin/Makefile
-+++ src/usr.sbin/Makefile
-@@ -2,7 +2,7 @@
- 
- .include <bsd.own.mk>
- 
--SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp \
-+SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd aprsd arp \
- 	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
- 	dhcpd dhcrelay dhcrelay6 dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
- 	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd iclcd identd \
-Index: src/etc/Makefile
-===================================================================
---- src.orig/etc/Makefile
-+++ src/etc/Makefile
-@@ -57,7 +57,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.
- 	ripd.conf sasyncd.conf snmpd.conf vm.conf ypldap.conf
- 
- # -r-xr-xr-x
--RCDAEMONS=amd apmd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
-+RCDAEMONS=amd apmd aprsd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
- 	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd iclcd identd ifstated \
- 	iked inetd isakmpd iscsid ldapd ldattach ldomd ldpd lockd \
- 	lpd mopd mountd mrouted nfsd npppd nsd ntpd ospf6d ospfd \
-Index: src/etc/rc
-===================================================================
---- src.orig/etc/rc
-+++ src/etc/rc
-@@ -585,7 +585,7 @@ start_daemon ldomd sshd switchd snmpd ld
- start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
- start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
- start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
--start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
-+start_daemon rbootd mopd vmd spamd spamlogd sndiod aprsd iclcd
- echo '.'
- 
- # If rc.firsttime exists, run it just once, and make sure it is deleted.
-Index: src/etc/rc.conf
-===================================================================
---- src.orig/etc/rc.conf
-+++ src/etc/rc.conf
-@@ -14,6 +14,7 @@
- # Set them to "" to run them with the default flags.
- # Otherwise, these variables override the default flags.
- apmd_flags=NO
-+aprsd_flags=NO
- bgpd_flags=NO
- bootparamd_flags=NO
- cron_flags=
-Index: src/etc/rc.d/aprsd
-===================================================================
+diff --git a/usr.sbin/aprsd/parse.y b/usr.sbin/aprsd/parse.y
+new file mode 100644
+index 00000000000..a4ab392a471
 --- /dev/null
-+++ src/etc/rc.d/aprsd
-@@ -0,0 +1,11 @@
-+#!/bin/ksh
-+#
-+# $OpenBSD$
-+
-+daemon="/usr/sbin/aprsd"
-+
-+. /etc/rc.d/rc.subr
-+
-+rc_reload=NO
-+
-+rc_cmd $1
-Index: src/usr.sbin/aprsd/aprsd.h
-===================================================================
---- /dev/null
-+++ src/usr.sbin/aprsd/aprsd.h
-@@ -0,0 +1,35 @@
-+
-+#define APRS_MAXLEN 256
-+
-+#define BEACONT_PON 1 /* position beacon, no timestamp */
-+#define BEACONT_POT 2 /* position beacon, with timestamp */
-+#define BEACONT_OBJ 3 /* object beacon */
-+
-+#define BEACONF_LATSET	0x01	/* a fixed latitude is defined */
-+#define BEACONF_LONSET	0x02	/* a fixed longitude is defined */
-+#define BEACONF_POSSET (BEACONF_LATSET | BEACONF_LONSET)
-+#define BEACONF_ALTSET	0x04	/* a fixed altitude is defined */
-+#define BEACONF_SOUTH	0x08	/* the fixed latitude is negative */
-+#define BEACONF_WEST	0x10	/* the fixed longitude in negative */
-+
-+struct beacon_config {
-+	long long latitude;
-+	long long longitude;
-+	long altitude;
-+	int type;
-+	int interval;
-+	int flags;
-+	char *comment;
-+	char *name;
-+	char *sensor;
-+};
-+
-+#define MAX_BEACONS 20
-+
-+struct aprsd_config {
-+	int num_beacons;
-+	struct beacon_config *beacons[MAX_BEACONS];
-+};
-+
-+/* parse.y */
-+int parse_config(char *, struct aprsd_config *);
-Index: src/usr.sbin/aprsd/parse.y
-===================================================================
---- /dev/null
-+++ src/usr.sbin/aprsd/parse.y
++++ b/usr.sbin/aprsd/parse.y
 @@ -0,0 +1,625 @@
 +/*	$OpenBSD: parse.y,v 1.18 2003/12/25 23:23:51 henning Exp $ */
 +
@@ -1474,148 +1661,6 @@ Index: src/usr.sbin/aprsd/parse.y
 +	*ulvalp = ulval;
 +	return (0);
 +}
-Index: src/usr.sbin/aprsd/aprsd.conf.5
-===================================================================
---- /dev/null
-+++ src/usr.sbin/aprsd/aprsd.conf.5
-@@ -0,0 +1,140 @@
-+.\" Copyright (c) 2019 Iain R. Learmonth.
-+.\" Copyright (c) 2004 Claudio Jeker <claudio@openbsd.org>
-+.\" Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
-+.\" Copyright (c) 2002 Daniel Hartmeier <dhartmei@openbsd.org>
-+.\"
-+.\" Permission to use, copy, modify, and distribute this software for any
-+.\" purpose with or without fee is hereby granted, provided that the above
-+.\" copyright notice and this permission notice appear in all copies.
-+.\"
-+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-+.\"
-+.Dd October 18, 2019
-+.Dt APRSD.CONF 5
-+.Os
-+.Sh NAME
-+.Nm aprsd.conf
-+.Nd Automatic Packet Reporting System daemon configuration file
-+.Sh DESCRIPTION
-+The
-+.Xr aprsd 8
-+daemon implements an Automatic Packet Reporting System (APRS) tracker and
-+digipeater.
-+.Pp
-+The
-+.Nm
-+config file is divided into the following main sections:
-+.Bl -tag -width xxxx
-+.It Sx MACROS
-+User-defined variables may be defined and used later, simplifying the
-+configuration file.
-+.It Sx BEACON CONFIGURATION
-+Periodic beacons for position and object reports are set in this section.
-+.It Sx DIGIPEATER CONFIGURATION
-+Filter rules for digipeating packets are set in this section.
-+.El
-+.Pp
-+The current line can be extended over multiple lines using a backslash
-+.Pq Sq \e .
-+Comments can be put anywhere in the file using a hash mark
-+.Pq Sq # ,
-+and extend to the end of the current line.
-+Care should be taken when commenting out multi-line text:
-+the comment is effective until the end of the entire block.
-+.Pp
-+Argument names not beginning with a letter, digit, or underscore
-+must be quoted.
-+.Sh MACROS
-+Macros can be defined that will later be expanded in context.
-+Macro names must start with a letter, digit, or underscore,
-+and may contain any of those characters.
-+Macro names may not be reserved words (for example,
-+.Ic beacon ,
-+.Ic sensor ,
-+or
-+.Ic longitude ) .
-+Macros are not expanded inside quotes.
-+.Pp
-+For example:
-+.Bd -literal -offset indent
-+gps="nmea0"
-+beacon position sensor $gps
-+.Ed
-+.Sh BEACON CONFIGURATION
-+These define beacons to be transmitted periodically by
-+.Xr aprsd 8 .
-+.Bl -tag -width Ds
-+.It Xo
-+.Ic beacon Cm position Op Cm no-timestamp
-+.Po
-+.Cm sensor Ar sensor | Cm latitude Ar latitude Op Cm north | Cm south
-+.Cm longitude Ar longitude Op Cm east | Cm west
-+.Pc
-+.Op Cm comment Ar comment
-+.Op Cm interval Ar interval
-+.Xc
-+.Pp
-+Register a position beacon to be transmitted every
-+.Ar interval
-+seconds using either the GPS location given by
-+.Ar sensor
-+or the fixed
-+.Ar latitude
-+and
-+.Ar longitude .
-+Fixed positions
-+.Pf ( Ar latitude
-+and
-+.Ar longitude )
-+are given in microdegrees.
-+To convert degrees to microdegrees simply multiply by 10^6.
-+The number must be positive.
-+To indicate a negative latitude or longitude, use the
-+.Cm south
-+or
-+.Cm west
-+keywords respectively.
-+.Pp
-+If the
-+.Cm no-timestamp
-+option is given then the beacon will use the format that does not contain a
-+timestamp, which can be useful for machines that do not have a real-time clock.
-+The comment can be set as a free-text field to be included in the position
-+report.
-+.It Xo
-+.Ic beacon Cm object Cm name Ar name
-+.Po
-+.Cm sensor Ar sensor | Cm latitude Ar latitude Op Cm north | Cm south
-+.Cm longitude Ar longitude Op Cm east | Cm west
-+.Pc
-+.Op Cm comment Ar comment
-+.Op Cm interval Ar interval
-+.Xc
-+.Pp
-+Register an object beacon.
-+Most of the modifiers for an object beacon behave in the same way as for a
-+position beacon.
-+.Pp
-+Every object beacon must have a name, which must be no more than 6 characters
-+and contain only letters and numbers.
-+The comment can be set as a free-text field to be included in the object position
-+report.
-+.El
-+.Sh FILES
-+.Bl -tag -width "/etc/aprsd.conf" -compact
-+.It Pa /etc/aprsd.conf
-+.El
-+.Sh SEE ALSO
-+.Xr ax25 4 ,
-+.Xr aprsd 8 ,
-+.Xr aprsisd 8
-+.Sh HISTORY
-+The
-+.Nm
-+file format first appeared in HamBSD XXX.
+-- 
+2.23.0
+

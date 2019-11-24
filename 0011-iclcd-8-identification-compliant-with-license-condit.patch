@@ -1,9 +1,135 @@
-Summary: iclcd(8): identify compliant with license conditions
+From d502ddbdec8f0f7dc57c67ee2771496a5fe7e841 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Sat, 23 Nov 2019 22:55:18 +0000
+Subject: [PATCH 11/13] iclcd(8): identification compliant with license
+ conditions
+
 ---
-Index: src/usr.sbin/iclcd/Makefile
-===================================================================
+ distrib/sets/lists/base/mi |   2 +
+ distrib/sets/lists/man/mi  |   1 +
+ etc/Makefile               |   2 +-
+ etc/rc                     |   2 +-
+ etc/rc.conf                |   1 +
+ etc/rc.d/iclcd             |  11 +
+ usr.sbin/Makefile          |   2 +-
+ usr.sbin/iclcd/Makefile    |   9 +
+ usr.sbin/iclcd/heard.5     |  69 ++++++
+ usr.sbin/iclcd/iclc.h      |  26 +++
+ usr.sbin/iclcd/iclcd.8     |  81 +++++++
+ usr.sbin/iclcd/iclcd.c     | 458 +++++++++++++++++++++++++++++++++++++
+ 12 files changed, 661 insertions(+), 3 deletions(-)
+ create mode 100644 etc/rc.d/iclcd
+ create mode 100644 usr.sbin/iclcd/Makefile
+ create mode 100644 usr.sbin/iclcd/heard.5
+ create mode 100644 usr.sbin/iclcd/iclc.h
+ create mode 100644 usr.sbin/iclcd/iclcd.8
+ create mode 100644 usr.sbin/iclcd/iclcd.c
+
+diff --git a/distrib/sets/lists/base/mi b/distrib/sets/lists/base/mi
+index 1beb139fc23..2ed43c2f27d 100644
+--- a/distrib/sets/lists/base/mi
++++ b/distrib/sets/lists/base/mi
+@@ -154,6 +154,7 @@
+ ./etc/rc.d/hostapd
+ ./etc/rc.d/hotplugd
+ ./etc/rc.d/httpd
++./etc/rc.d/iclcd
+ ./etc/rc.d/identd
+ ./etc/rc.d/ifstated
+ ./etc/rc.d/iked
+@@ -2515,6 +2516,7 @@
+ ./usr/sbin/host
+ ./usr/sbin/hostapd
+ ./usr/sbin/httpd
++./usr/sbin/iclcd
+ ./usr/sbin/identd
+ ./usr/sbin/ifstated
+ ./usr/sbin/ikectl
+diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
+index e901c7f897e..32aba2c271f 100644
+--- a/distrib/sets/lists/man/mi
++++ b/distrib/sets/lists/man/mi
+@@ -2337,6 +2337,7 @@
+ ./usr/share/man/man8/i386/memconfig.8
+ ./usr/share/man/man8/i386/pxeboot.8
+ ./usr/share/man/man8/i386/wsmoused.8
++./usr/share/man/man8/iclcd.8
+ ./usr/share/man/man8/identd.8
+ ./usr/share/man/man8/ifconfig.8
+ ./usr/share/man/man8/ifstated.8
+diff --git a/etc/Makefile b/etc/Makefile
+index b4c3456af86..4f378fd4f6f 100644
+--- a/etc/Makefile
++++ b/etc/Makefile
+@@ -58,7 +58,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.conf eigrpd.conf hostapd.conf \
+ 
+ # -r-xr-xr-x
+ RCDAEMONS=amd apmd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
+-	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd identd ifstated \
++	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd iclcd identd ifstated \
+ 	iked inetd isakmpd iscsid ldapd ldattach ldomd ldpd lockd \
+ 	lpd mopd mountd mrouted nfsd npppd nsd ntpd ospf6d ospfd \
+ 	pflogd portmap rad radiusd rarpd rbootd rebound relayd ripd route6d \
+diff --git a/etc/rc b/etc/rc
+index 73303379ca3..90731e1e841 100644
+--- a/etc/rc
++++ b/etc/rc
+@@ -585,7 +585,7 @@ start_daemon ldomd sshd switchd snmpd ldpd ripd ospfd ospf6d bgpd ifstated
+ start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
+ start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
+ start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
+-start_daemon rbootd mopd vmd spamd spamlogd sndiod
++start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
+ echo '.'
+ 
+ # If rc.firsttime exists, run it just once, and make sure it is deleted.
+diff --git a/etc/rc.conf b/etc/rc.conf
+index a513b7575d4..baad5ed773d 100644
+--- a/etc/rc.conf
++++ b/etc/rc.conf
+@@ -27,6 +27,7 @@ ftpproxy6_flags=NO
+ hostapd_flags=NO
+ hotplugd_flags=NO
+ httpd_flags=NO
++iclcd_flags=NO
+ identd_flags=NO
+ ifstated_flags=NO
+ iked_flags=NO
+diff --git a/etc/rc.d/iclcd b/etc/rc.d/iclcd
+new file mode 100644
+index 00000000000..e0d11f75ada
 --- /dev/null
-+++ src/usr.sbin/iclcd/Makefile
++++ b/etc/rc.d/iclcd
+@@ -0,0 +1,11 @@
++#!/bin/ksh
++#
++# $OpenBSD$
++
++daemon="/usr/sbin/iclcd"
++
++. /etc/rc.d/rc.subr
++
++rc_reload=NO
++
++rc_cmd $1
+diff --git a/usr.sbin/Makefile b/usr.sbin/Makefile
+index 38720c53146..f7f20012a85 100644
+--- a/usr.sbin/Makefile
++++ b/usr.sbin/Makefile
+@@ -5,7 +5,7 @@
+ SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp \
+ 	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
+ 	dhcpd dhcrelay dhcrelay6 dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
+-	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd identd \
++	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd iclcd identd \
+ 	ifstated ikectl inetd installboot iostat iscsictl iscsid kgmon \
+ 	kvm_mkdb ldapd ldapctl ldomctl ldomd ldpd ldpctl lpr makefs \
+ 	mailwrapper map-mbone memconfig mksuncd mkuboot mopd mrinfo \
+diff --git a/usr.sbin/iclcd/Makefile b/usr.sbin/iclcd/Makefile
+new file mode 100644
+index 00000000000..2cb37eb81c3
+--- /dev/null
++++ b/usr.sbin/iclcd/Makefile
 @@ -0,0 +1,9 @@
 +#	$OpenBSD: Makefile,v 1.8 2015/03/11 14:59:04 deraadt Exp $
 +
@@ -14,10 +140,118 @@ Index: src/usr.sbin/iclcd/Makefile
 +LDADD=  -lpthread
 +
 +.include <bsd.prog.mk>
-Index: src/usr.sbin/iclcd/iclcd.8
-===================================================================
+diff --git a/usr.sbin/iclcd/heard.5 b/usr.sbin/iclcd/heard.5
+new file mode 100644
+index 00000000000..33859b23f43
 --- /dev/null
-+++ src/usr.sbin/iclcd/iclcd.8
++++ b/usr.sbin/iclcd/heard.5
+@@ -0,0 +1,69 @@
++.Dd October 7, 2019
++.Dt HEARD 5
++.Os
++.Sh NAME
++.Nm heard
++.Nd heard stations database
++.Sh DESCRIPTION
++The
++.Nm
++file maps Ethernet addresses to call signs.
++The format is intended to be somewhat human readable to allow for debugging
++however this format should never be written or edited by a human.
++It is expected that this file will be maintained by
++.Xr iclcd 8 .
++.Pp
++Lines consist of the following fields:
++.Bl -item -offset indent -compact
++.It
++Ethernet address
++.It
++Station callsign
++.It
++Flags
++.It
++First heard timestamp
++.It
++Last heard timestamp
++.El
++.Pp
++Fields are seperated by a horizontal tab character (hex value 0x09) and lines
++are seperated by a newline character (hex value 0x0a).
++.Ss Field Details
++.Bl -tag -width Ds
++.It Ethernet address
++Ethernet addresses are expressed as six hexadecimal numbers separated by
++colons.
++The functions described in
++.Xr ether_aton 3
++can read and produce this format.
++.It Station callsign
++The station callsign does not have a fixed format and is treated as an
++opaque
++.Xr ascii 7
++string.
++It will only consist of printable characters and must contain at least
++one character, but no guarantees are made beyond this.
++.It Flags
++The station flags are expressed as a decimal number.
++The flags are described in
++.Xr hamdex 7 .
++.It First heard timestamp
++The time that the station was first heard is expressed as a decimal
++number of seconds since 0 hours, 0 minutes, 0 seconds, January 1, 1970,
++Coordinated Universal Time (UTC).
++.It Last heard timestamp
++The time that the station was last heard, expressed as above.
++.El
++.Sh FILES
++.Bl -tag -width /var/db/heard -compact
++.It Pa /var/db/heard
++.El
++.Sh SEE ALSO
++.Xr heard 1 ,
++.Xr iclcd 8
++.Sh AUTHORS
++The
++.Nm
++daemon was written for the HamBSD project by
++.An Iain R. Learmonth Aq Mt irl@fsfe.org
+diff --git a/usr.sbin/iclcd/iclc.h b/usr.sbin/iclcd/iclc.h
+new file mode 100644
+index 00000000000..4155d7a25b8
+--- /dev/null
++++ b/usr.sbin/iclcd/iclc.h
+@@ -0,0 +1,26 @@
++
++#define ICLC_IDENT_QRT 1
++
++#define ICLC_MAXCALL 42
++
++struct iclc_ident_frame_hdr {
++	struct ether_addr	fr_dhost;
++	struct ether_addr	fr_shost;
++	u_int16_t		fr_et;
++	u_int8_t		fr_subtype;
++	u_int8_t		fr_version;
++	u_int8_t		fr_flags;
++	u_int8_t		fr_calllen;
++	u_int8_t		fr_call[ICLC_MAXCALL];
++};
++
++struct iclc_ident {
++	char			call[ICLC_MAXCALL];
++	struct ether_addr	hwaddr;
++	time_t			first_heard;
++	time_t			last_heard;
++	int			flags;
++	SLIST_ENTRY(iclc_ident)	entries;
++};
++SLIST_HEAD(iclc_idents_list, iclc_ident) iclc_idents;
++
+diff --git a/usr.sbin/iclcd/iclcd.8 b/usr.sbin/iclcd/iclcd.8
+new file mode 100644
+index 00000000000..6da7f0895fb
+--- /dev/null
++++ b/usr.sbin/iclcd/iclcd.8
 @@ -0,0 +1,81 @@
 +.Dd October 7, 2019
 +.Dt ICLCD 8
@@ -100,10 +334,11 @@ Index: src/usr.sbin/iclcd/iclcd.8
 +This may not be enough to comply with your local laws regarding identification
 +of amateur radio transmissions.
 +This manual page is not legal advice.
-Index: src/usr.sbin/iclcd/iclcd.c
-===================================================================
+diff --git a/usr.sbin/iclcd/iclcd.c b/usr.sbin/iclcd/iclcd.c
+new file mode 100644
+index 00000000000..decce9ecef2
 --- /dev/null
-+++ src/usr.sbin/iclcd/iclcd.c
++++ b/usr.sbin/iclcd/iclcd.c
 @@ -0,0 +1,458 @@
 +/*
 + * iclcd - intentification compliant with license conditions daemon
@@ -563,207 +798,6 @@ Index: src/usr.sbin/iclcd/iclcd.c
 +	/* XXX: unreachable code, needs to go in signal handler? */
 +	return pthread_join(beacon_thread, NULL);
 +}
-Index: src/usr.sbin/iclcd/iclc.h
-===================================================================
---- /dev/null
-+++ src/usr.sbin/iclcd/iclc.h
-@@ -0,0 +1,26 @@
-+
-+#define ICLC_IDENT_QRT 1
-+
-+#define ICLC_MAXCALL 42
-+
-+struct iclc_ident_frame_hdr {
-+	struct ether_addr	fr_dhost;
-+	struct ether_addr	fr_shost;
-+	u_int16_t		fr_et;
-+	u_int8_t		fr_subtype;
-+	u_int8_t		fr_version;
-+	u_int8_t		fr_flags;
-+	u_int8_t		fr_calllen;
-+	u_int8_t		fr_call[ICLC_MAXCALL];
-+};
-+
-+struct iclc_ident {
-+	char			call[ICLC_MAXCALL];
-+	struct ether_addr	hwaddr;
-+	time_t			first_heard;
-+	time_t			last_heard;
-+	int			flags;
-+	SLIST_ENTRY(iclc_ident)	entries;
-+};
-+SLIST_HEAD(iclc_idents_list, iclc_ident) iclc_idents;
-+
-Index: src/etc/rc.d/iclcd
-===================================================================
---- /dev/null
-+++ src/etc/rc.d/iclcd
-@@ -0,0 +1,11 @@
-+#!/bin/ksh
-+#
-+# $OpenBSD$
-+
-+daemon="/usr/sbin/iclcd"
-+
-+. /etc/rc.d/rc.subr
-+
-+rc_reload=NO
-+
-+rc_cmd $1
-Index: src/etc/rc
-===================================================================
---- src.orig/etc/rc
-+++ src/etc/rc
-@@ -585,7 +585,7 @@ start_daemon ldomd sshd switchd snmpd ld
- start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
- start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
- start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
--start_daemon rbootd mopd vmd spamd spamlogd sndiod
-+start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
- echo '.'
- 
- # If rc.firsttime exists, run it just once, and make sure it is deleted.
-Index: src/etc/rc.conf
-===================================================================
---- src.orig/etc/rc.conf
-+++ src/etc/rc.conf
-@@ -27,6 +27,7 @@ ftpproxy6_flags=NO
- hostapd_flags=NO
- hotplugd_flags=NO
- httpd_flags=NO
-+iclcd_flags=NO
- identd_flags=NO
- ifstated_flags=NO
- iked_flags=NO
-Index: src/etc/Makefile
-===================================================================
---- src.orig/etc/Makefile
-+++ src/etc/Makefile
-@@ -58,7 +58,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.
- 
- # -r-xr-xr-x
- RCDAEMONS=amd apmd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
--	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd identd ifstated \
-+	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd iclcd identd ifstated \
- 	iked inetd isakmpd iscsid ldapd ldattach ldomd ldpd lockd \
- 	lpd mopd mountd mrouted nfsd npppd nsd ntpd ospf6d ospfd \
- 	pflogd portmap rad radiusd rarpd rbootd rebound relayd ripd route6d \
-Index: src/usr.sbin/Makefile
-===================================================================
---- src.orig/usr.sbin/Makefile
-+++ src/usr.sbin/Makefile
-@@ -5,7 +5,7 @@
- SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd arp \
- 	authpf bgpctl bgpd bind chroot config cron crunchgen dev_mkdb \
- 	dhcpd dhcrelay dhcrelay6 dvmrpctl dvmrpd edquota eeprom eigrpd eigrpctl \
--	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd identd \
-+	fdformat ftp-proxy gpioctl hostapd hostctl hotplugd httpd iclcd identd \
- 	ifstated ikectl inetd installboot iostat iscsictl iscsid kgmon \
- 	kvm_mkdb ldapd ldapctl ldomctl ldomd ldpd ldpctl lpr makefs \
- 	mailwrapper map-mbone memconfig mksuncd mkuboot mopd mrinfo \
-Index: src/distrib/sets/lists/base/mi
-===================================================================
---- src.orig/distrib/sets/lists/base/mi
-+++ src/distrib/sets/lists/base/mi
-@@ -154,6 +154,7 @@
- ./etc/rc.d/hostapd
- ./etc/rc.d/hotplugd
- ./etc/rc.d/httpd
-+./etc/rc.d/iclcd
- ./etc/rc.d/identd
- ./etc/rc.d/ifstated
- ./etc/rc.d/iked
-@@ -2515,6 +2516,7 @@
- ./usr/sbin/host
- ./usr/sbin/hostapd
- ./usr/sbin/httpd
-+./usr/sbin/iclcd
- ./usr/sbin/identd
- ./usr/sbin/ifstated
- ./usr/sbin/ikectl
-Index: src/distrib/sets/lists/man/mi
-===================================================================
---- src.orig/distrib/sets/lists/man/mi
-+++ src/distrib/sets/lists/man/mi
-@@ -2336,6 +2336,7 @@
- ./usr/share/man/man8/i386/memconfig.8
- ./usr/share/man/man8/i386/pxeboot.8
- ./usr/share/man/man8/i386/wsmoused.8
-+./usr/share/man/man8/iclcd.8
- ./usr/share/man/man8/identd.8
- ./usr/share/man/man8/ifconfig.8
- ./usr/share/man/man8/ifstated.8
-Index: src/usr.sbin/iclcd/heard.5
-===================================================================
---- /dev/null
-+++ src/usr.sbin/iclcd/heard.5
-@@ -0,0 +1,69 @@
-+.Dd October 7, 2019
-+.Dt HEARD 5
-+.Os
-+.Sh NAME
-+.Nm heard
-+.Nd heard stations database
-+.Sh DESCRIPTION
-+The
-+.Nm
-+file maps Ethernet addresses to call signs.
-+The format is intended to be somewhat human readable to allow for debugging
-+however this format should never be written or edited by a human.
-+It is expected that this file will be maintained by
-+.Xr iclcd 8 .
-+.Pp
-+Lines consist of the following fields:
-+.Bl -item -offset indent -compact
-+.It
-+Ethernet address
-+.It
-+Station callsign
-+.It
-+Flags
-+.It
-+First heard timestamp
-+.It
-+Last heard timestamp
-+.El
-+.Pp
-+Fields are seperated by a horizontal tab character (hex value 0x09) and lines
-+are seperated by a newline character (hex value 0x0a).
-+.Ss Field Details
-+.Bl -tag -width Ds
-+.It Ethernet address
-+Ethernet addresses are expressed as six hexadecimal numbers separated by
-+colons.
-+The functions described in
-+.Xr ether_aton 3
-+can read and produce this format.
-+.It Station callsign
-+The station callsign does not have a fixed format and is treated as an
-+opaque
-+.Xr ascii 7
-+string.
-+It will only consist of printable characters and must contain at least
-+one character, but no guarantees are made beyond this.
-+.It Flags
-+The station flags are expressed as a decimal number.
-+The flags are described in
-+.Xr hamdex 7 .
-+.It First heard timestamp
-+The time that the station was first heard is expressed as a decimal
-+number of seconds since 0 hours, 0 minutes, 0 seconds, January 1, 1970,
-+Coordinated Universal Time (UTC).
-+.It Last heard timestamp
-+The time that the station was last heard, expressed as above.
-+.El
-+.Sh FILES
-+.Bl -tag -width /var/db/heard -compact
-+.It Pa /var/db/heard
-+.El
-+.Sh SEE ALSO
-+.Xr heard 1 ,
-+.Xr iclcd 8
-+.Sh AUTHORS
-+The
-+.Nm
-+daemon was written for the HamBSD project by
-+.An Iain R. Learmonth Aq Mt irl@fsfe.org
+-- 
+2.23.0
+
