@@ -1,7 +1,7 @@
-From 73f32ee53a5129b272e959e573ac68e109644004 Mon Sep 17 00:00:00 2001
+From c0b1bc4198dda9d42979108fab4ae02239af874b Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sat, 23 Nov 2019 22:50:08 +0000
-Subject: [PATCH 05/13] kiss(4): kiss tnc support
+Subject: [PATCH 05/14] kiss(4): kiss tnc support
 
 ---
  distrib/sets/lists/comp/mi |   1 +
@@ -27,10 +27,10 @@ Subject: [PATCH 05/13] kiss(4): kiss tnc support
  create mode 100644 sys/net/kiss_tty.c
 
 diff --git a/distrib/sets/lists/comp/mi b/distrib/sets/lists/comp/mi
-index 08d1ce43b07..cbbe97dc51d 100644
+index fc889e2b8bc..0dad3bbcace 100644
 --- a/distrib/sets/lists/comp/mi
 +++ b/distrib/sets/lists/comp/mi
-@@ -968,6 +968,7 @@
+@@ -967,6 +967,7 @@
  ./usr/include/net/if_etherip.h
  ./usr/include/net/if_gif.h
  ./usr/include/net/if_gre.h
@@ -39,7 +39,7 @@ index 08d1ce43b07..cbbe97dc51d 100644
  ./usr/include/net/if_media.h
  ./usr/include/net/if_pflog.h
 diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
-index aa6a40921e9..4169cc4994e 100644
+index 1562d7b2db2..5c825cd4268 100644
 --- a/distrib/sets/lists/man/mi
 +++ b/distrib/sets/lists/man/mi
 @@ -1348,6 +1348,7 @@
@@ -51,7 +51,7 @@ index aa6a40921e9..4169cc4994e 100644
  ./usr/share/man/man4/em.4
  ./usr/share/man/man4/emc.4
 diff --git a/share/man/man4/Makefile b/share/man/man4/Makefile
-index b624de30f94..774759d0dd7 100644
+index 9d8ac7055d0..eded769945b 100644
 --- a/share/man/man4/Makefile
 +++ b/share/man/man4/Makefile
 @@ -25,7 +25,7 @@ MAN=	aac.4 abcrtc.4 ac97.4 acphy.4 acrtc.4 \
@@ -63,7 +63,7 @@ index b624de30f94..774759d0dd7 100644
  	emu.4 enc.4 endrun.4 envy.4 eoip.4 ep.4 epic.4 esa.4 \
  	eso.4 ess.4 et.4 etherip.4 etphy.4 ex.4 exphy.4 exrtc.4 \
  	fanpwr.4 fd.4 fdc.4 fec.4 fins.4 fintek.4 fms.4 fusbtc.4 fuse.4 \
-@@ -42,7 +42,7 @@ MAN=	aac.4 abcrtc.4 ac97.4 acphy.4 acrtc.4 \
+@@ -41,7 +41,7 @@ MAN=	aac.4 abcrtc.4 ac97.4 acphy.4 acrtc.4 \
  	ip.4 ip6.4 ipcomp.4 ipgphy.4 ipmi.4 ips.4 ipsec.4 ipw.4 \
  	isa.4 isagpio.4 isapnp.4 islrtc.4 it.4 itherm.4 iwi.4 iwn.4 iwm.4 \
  	ix.4 ixgb.4 ixl.4 jmb.4 jme.4 jmphy.4 \
@@ -306,7 +306,7 @@ index 0b51e631222..3c54ba203a0 100644
  pseudo-device	bio	1	# ioctl multiplexing device
  
 diff --git a/sys/conf/files b/sys/conf/files
-index 5aaa4a03ba1..d8bc1c063e0 100644
+index c921a4ecf1b..d110974326a 100644
 --- a/sys/conf/files
 +++ b/sys/conf/files
 @@ -540,6 +540,7 @@ pseudo-device pty: tty

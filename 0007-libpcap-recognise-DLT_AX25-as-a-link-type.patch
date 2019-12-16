@@ -1,7 +1,7 @@
-From 20e32e50b620d6926e5fcd9f48a2d6ec7a4142bc Mon Sep 17 00:00:00 2001
+From 797df465804171b00c4b12287d046e9f68da4dfe Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sun, 24 Nov 2019 12:08:24 +0000
-Subject: [PATCH 10/13] libpcap: recognise DLT_AX25 as a link type
+Subject: [PATCH 07/14] libpcap: recognise DLT_AX25 as a link type
 
 ---
  lib/libpcap/gencode.c | 9 +++++++++

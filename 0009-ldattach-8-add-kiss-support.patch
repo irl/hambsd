@@ -1,7 +1,7 @@
-From 753ae671c5ff393e5ae9001a9daa461b19504aff Mon Sep 17 00:00:00 2001
+From 900bb098556e2e504bbf1c2f43729933716c0f4b Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sat, 23 Nov 2019 22:50:42 +0000
-Subject: [PATCH 08/13] ldattach(8): add kiss support
+Subject: [PATCH 09/14] ldattach(8): add kiss support
 
 ---
  sbin/ldattach/ldattach.8 | 7 ++++++-

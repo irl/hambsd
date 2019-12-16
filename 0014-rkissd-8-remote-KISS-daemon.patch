@@ -1,0 +1,283 @@
+From db9faf7103a57f932559ac41620994fea5cf44d8 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Mon, 16 Dec 2019 20:23:15 +0000
+Subject: [PATCH 14/14] rkissd(8): remote KISS daemon
+
+---
+ usr.sbin/rkissd/Makefile |   9 ++
+ usr.sbin/rkissd/rkissd.8 |  50 +++++++++++
+ usr.sbin/rkissd/rkissd.c | 189 +++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 248 insertions(+)
+ create mode 100644 usr.sbin/rkissd/Makefile
+ create mode 100644 usr.sbin/rkissd/rkissd.8
+ create mode 100644 usr.sbin/rkissd/rkissd.c
+
+diff --git a/usr.sbin/rkissd/Makefile b/usr.sbin/rkissd/Makefile
+new file mode 100644
+index 00000000000..ef910069e0c
+--- /dev/null
++++ b/usr.sbin/rkissd/Makefile
+@@ -0,0 +1,9 @@
++#	$OpenBSD$
++
++PROG=	rkissd
++SRCS=	rkissd.c
++MAN=	rkissd.8
++
++CFLAGS= -lutil
++
++.include <bsd.prog.mk>
+diff --git a/usr.sbin/rkissd/rkissd.8 b/usr.sbin/rkissd/rkissd.8
+new file mode 100644
+index 00000000000..68da46c170e
+--- /dev/null
++++ b/usr.sbin/rkissd/rkissd.8
+@@ -0,0 +1,50 @@
++.Dd November 30, 2019
++.Dt RKISSD 8
++.Os
++.Sh NAME
++.Nm rkissd
++.Nd Remote KISS daemon
++.Sh SYNOPSIS
++.Nm rkissd
++.Op Fl D
++.Op Fl T
++.Op Ar server Op Ar port
++.Sh DESCRIPTION
++The remote KISS daemon connects to a remote KISS TNC via TCP, creates a
++.Xr pty 4
++and then attaches the
++.Xr kiss 4
++line discipline.
++In effect this allows the use of KISS over TCP with an
++.Xr axkiss 4
++network interface.
++.Sh OPTIONS
++.Bl -tag -width Ds
++.It Fl D
++Do not daemonize.
++.It Fl T
++Use TCP (default).
++.It server
++The hostname or IP address to connect to.
++.It port
++The port number to connect to. (default: 8001)
++.Sh SEE ALSO
++.Xr axkiss 4 ,
++.Xr kiss 4 ,
++.Xr pty 4 ,
++.Xr aprs 7 ,
++.Xr aprsd 8
++.Sh HISTORY
++.Nm
++first appeared in HamBSD XXX.
++.Sh AUTHORS
++The
++.Nm
++daemon was written for the HamBSD project by
++.An Iain R. Learmonth Aq Mt irl@fsfe.org
++for the public domain.
++.Sh BUGS
++There is no logging or diagnostics of any kind.
++There is no support for UDP as used by fldigi.
++If the connection is broken, the process will die and leave the network
++interface useless, rather silently.
+diff --git a/usr.sbin/rkissd/rkissd.c b/usr.sbin/rkissd/rkissd.c
+new file mode 100644
+index 00000000000..73b5ef9f3c9
+--- /dev/null
++++ b/usr.sbin/rkissd/rkissd.c
+@@ -0,0 +1,189 @@
++
++#include <err.h>
++#include <fcntl.h>
++#include <signal.h>
++#include <stdlib.h>
++#include <stdio.h>
++#include <string.h>
++#include <strings.h>
++#include <termios.h>
++#include <unistd.h>
++#include <util.h>
++
++#include <sys/ioctl.h>
++#include <sys/types.h>
++#include <sys/event.h>
++#include <sys/socket.h>
++#include <sys/time.h>
++#include <netdb.h>
++
++#include <arpa/inet.h>
++#include <netinet/in.h>
++#include <netinet/tcp.h>
++
++static __dead void
++usage(void)
++{
++	extern char *__progname;
++
++	fprintf(stderr, "usage: %s [-D] [-T] server [port]\n", __progname);
++	exit(1);
++}
++
++static void
++signal_handler(int sig)
++{
++	switch (sig) {
++	case SIGTERM:
++		errx(1, "caught terminate signal");
++		exit(0);
++		break;
++	}
++}
++
++static void
++daemonize(void)
++{
++	daemon(0, 0);
++	signal(SIGCHLD, SIG_IGN); /* ignore child */
++	signal(SIGTSTP, SIG_IGN); /* ignore tty signals */
++	signal(SIGTTOU, SIG_IGN);
++	signal(SIGTTIN, SIG_IGN);
++	signal(SIGHUP, signal_handler); /* catch hangup signal */
++	signal(SIGTERM, signal_handler); /* catch kill signal */
++}
++
++static void
++rkiss_loop(int lfd, int rfd)
++{
++	int evi, kq, nev, nr;
++	struct kevent chlist[2];
++	struct kevent evlist[2];
++	char buffer[1000];
++
++	if ((kq = kqueue()) == -1)
++		err(1, "kqueue");
++
++	EV_SET(&chlist[0], lfd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
++	EV_SET(&chlist[1], rfd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
++
++	while ((nev = kevent(kq, chlist, 2, evlist, 2, NULL)) > 0) {
++		for (evi = 0; evi < nev; evi++) {
++			nr = read(evlist[evi].ident, buffer, 1000);
++			if (evlist[evi].ident == lfd)
++				write(rfd, buffer, nr);
++			else
++				write(lfd, buffer, nr);
++			printf("data arrived :%s\n", &buffer[2]);
++		}
++	}
++}
++
++static void *
++get_in_addr(struct sockaddr *sa)
++{
++	if (sa->sa_family == AF_INET)
++		return &(((struct sockaddr_in*)sa)->sin_addr);
++	return &(((struct sockaddr_in6*)sa)->sin6_addr);
++}
++
++static int
++rkiss_tcp_open(char *server, char *port) {
++	struct addrinfo hints, *servinfo, *p;
++	int nodelay, rfd, rv;
++	char *login, as[INET6_ADDRSTRLEN];
++
++	memset(&hints, 0, sizeof hints);
++	hints.ai_family = AF_UNSPEC;
++	hints.ai_socktype = SOCK_STREAM;
++
++	if ((rv = getaddrinfo(server, port, &hints, &servinfo)) != 0)
++		errx(1, "getaddrinfo: %s\n", gai_strerror(rv));
++
++	for (p = servinfo; p != NULL; p = p->ai_next) {
++		if ((rfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
++			err(1, "socket");
++		if (connect(rfd, p->ai_addr, p->ai_addrlen) == -1)
++			err(1, "connect");
++		break;
++	}
++
++	if (p == NULL)
++		err(1, "connect");
++
++	nodelay = 1;
++	setsockopt(rfd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
++
++	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), as, sizeof(as));
++
++	freeaddrinfo(servinfo);
++
++	return rfd;
++}
++
++static int rkiss_pty_open(void) {
++	int ldisc, mfd, sfd;
++	char name[100]; /* TODO: what is this really */
++	struct termios tty;
++
++	if (openpty(&mfd, &sfd, name, NULL, NULL) == -1)
++		err(1, "openpty");
++	if (fcntl(mfd, F_SETFL, O_NONBLOCK) < 0)
++		err(1, "ptym: fcntl");
++	if (fcntl(sfd, F_SETFL, O_NONBLOCK) < 0)
++		err(1, "ptys: fcntl");
++	tcgetattr(sfd, &tty);
++	cfmakeraw(&tty);
++	if (tcsetattr(sfd, TCSANOW, &tty) == -1)
++		err(1, "tcsetattr");
++	ldisc = KISSDISC;
++	if (ioctl(sfd, TIOCSETD, &ldisc) == -1)
++		err(1, "tiocsetd");
++
++	return mfd;
++}
++
++int
++main(int argc, char *argv[])
++{
++	int daemon, lfd, mode, rfd;
++	char ch, *server, *port;
++
++	daemon = 1;
++	mode = 0;
++	port = "8001";
++
++	while ((ch = getopt(argc, argv, "DT")) != -1) {
++		switch (ch) {
++		case 'D':
++			daemon = 0;
++			break;
++		case 'T':
++			mode = 0; /* TCP */
++			break;
++		default:
++			usage();
++		}
++	}
++	argc -= optind;
++	argv += optind;
++
++	switch (argc) {
++	case 2:
++		port = argv[1];
++		/* FALLTHROUGH */
++	case 1:
++		server = argv[0];
++		break;
++	default:
++		usage();
++	}
++
++	lfd = rkiss_pty_open();
++	rfd = rkiss_tcp_open(server, port);
++
++	if (daemon)
++		daemonize();
++
++	rkiss_loop(lfd, rfd);
++}
+-- 
+2.23.0
+

@@ -1,18 +1,31 @@
-From c6ec6453c909b1efde2a205f31a9235f55c1a085 Mon Sep 17 00:00:00 2001
+From 0f82ecbe90a0edadfa5d043aae60ca8e84d36543 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sat, 23 Nov 2019 22:56:19 +0000
-Subject: [PATCH 13/13] aprsisd(8): aprs-is daemon
+Subject: [PATCH 13/14] aprsisd(8): aprs-is daemon
 
 ---
+ distrib/sets/lists/man/mi  |   1 +
  usr.sbin/Makefile          |   2 +-
  usr.sbin/aprsisd/Makefile  |   7 +
  usr.sbin/aprsisd/aprsisd.8 |  90 +++++++
  usr.sbin/aprsisd/aprsisd.c | 483 +++++++++++++++++++++++++++++++++++++
- 4 files changed, 581 insertions(+), 1 deletion(-)
+ 5 files changed, 582 insertions(+), 1 deletion(-)
  create mode 100644 usr.sbin/aprsisd/Makefile
  create mode 100644 usr.sbin/aprsisd/aprsisd.8
  create mode 100644 usr.sbin/aprsisd/aprsisd.c
 
+diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
+index e99756c9782..716b9df5098 100644
+--- a/distrib/sets/lists/man/mi
++++ b/distrib/sets/lists/man/mi
+@@ -2084,6 +2084,7 @@
+ ./usr/share/man/man5/acme-client.conf.5
+ ./usr/share/man/man5/aliases.5
+ ./usr/share/man/man5/aprsd.conf.5
++./usr/share/man/man5/aprsisd.conf.5
+ ./usr/share/man/man5/ar.5
+ ./usr/share/man/man5/bgpd.conf.5
+ ./usr/share/man/man5/bootparams.5
 diff --git a/usr.sbin/Makefile b/usr.sbin/Makefile
 index a7f76f73800..3a080897d11 100644
 --- a/usr.sbin/Makefile

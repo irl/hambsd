@@ -1,7 +1,7 @@
-From d502ddbdec8f0f7dc57c67ee2771496a5fe7e841 Mon Sep 17 00:00:00 2001
+From 74ed12c78db6c20f5edeb00b7b9d65ebb0c45236 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sat, 23 Nov 2019 22:55:18 +0000
-Subject: [PATCH 11/13] iclcd(8): identification compliant with license
+Subject: [PATCH 11/14] iclcd(8): identification compliant with license
  conditions
 
 ---
@@ -26,10 +26,10 @@ Subject: [PATCH 11/13] iclcd(8): identification compliant with license
  create mode 100644 usr.sbin/iclcd/iclcd.c
 
 diff --git a/distrib/sets/lists/base/mi b/distrib/sets/lists/base/mi
-index 1beb139fc23..2ed43c2f27d 100644
+index 80ec2363843..1a700dc80e0 100644
 --- a/distrib/sets/lists/base/mi
 +++ b/distrib/sets/lists/base/mi
-@@ -154,6 +154,7 @@
+@@ -153,6 +153,7 @@
  ./etc/rc.d/hostapd
  ./etc/rc.d/hotplugd
  ./etc/rc.d/httpd
@@ -37,7 +37,7 @@ index 1beb139fc23..2ed43c2f27d 100644
  ./etc/rc.d/identd
  ./etc/rc.d/ifstated
  ./etc/rc.d/iked
-@@ -2515,6 +2516,7 @@
+@@ -2514,6 +2515,7 @@
  ./usr/sbin/host
  ./usr/sbin/hostapd
  ./usr/sbin/httpd
@@ -46,10 +46,10 @@ index 1beb139fc23..2ed43c2f27d 100644
  ./usr/sbin/ifstated
  ./usr/sbin/ikectl
 diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
-index e901c7f897e..32aba2c271f 100644
+index 94479bc7c8e..8913b1a3f11 100644
 --- a/distrib/sets/lists/man/mi
 +++ b/distrib/sets/lists/man/mi
-@@ -2337,6 +2337,7 @@
+@@ -2338,6 +2338,7 @@
  ./usr/share/man/man8/i386/memconfig.8
  ./usr/share/man/man8/i386/pxeboot.8
  ./usr/share/man/man8/i386/wsmoused.8
@@ -58,7 +58,7 @@ index e901c7f897e..32aba2c271f 100644
  ./usr/share/man/man8/ifconfig.8
  ./usr/share/man/man8/ifstated.8
 diff --git a/etc/Makefile b/etc/Makefile
-index b4c3456af86..4f378fd4f6f 100644
+index 3f9419aac1e..23d0b762016 100644
 --- a/etc/Makefile
 +++ b/etc/Makefile
 @@ -58,7 +58,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.conf eigrpd.conf hostapd.conf \

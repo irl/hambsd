@@ -1,14 +1,14 @@
-From e369b4fb757352f524fcee9aa385c47fa725cc79 Mon Sep 17 00:00:00 2001
+From 4d55a839d17d1614ff19fa423090e3f698b77b0c Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sat, 23 Nov 2019 23:17:42 +0000
-Subject: [PATCH 07/13] ifconfig(8): show ax.25 addresses
+Subject: [PATCH 08/14] ifconfig(8): show ax.25 addresses
 
 ---
  sbin/ifconfig/ifconfig.c | 5 +++++
  1 file changed, 5 insertions(+)
 
 diff --git a/sbin/ifconfig/ifconfig.c b/sbin/ifconfig/ifconfig.c
-index 2ebb9b014cd..4071aee8f6c 100644
+index 0ee441181c9..994f8053b7f 100644
 --- a/sbin/ifconfig/ifconfig.c
 +++ b/sbin/ifconfig/ifconfig.c
 @@ -69,6 +69,7 @@
@@ -19,7 +19,7 @@ index 2ebb9b014cd..4071aee8f6c 100644
  #include <netinet/in_var.h>
  #include <netinet6/in6_var.h>
  #include <netinet6/nd6.h>
-@@ -3298,6 +3299,10 @@ status(int link, struct sockaddr_dl *sdl, int ls)
+@@ -3300,6 +3301,10 @@ status(int link, struct sockaddr_dl *sdl, int ls)
  	    (sdl->sdl_type == IFT_ETHER || sdl->sdl_type == IFT_CARP))
  		(void)printf("\tlladdr %s\n", ether_ntoa(
  		    (struct ether_addr *)LLADDR(sdl)));

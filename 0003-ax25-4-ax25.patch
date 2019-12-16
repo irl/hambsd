@@ -1,21 +1,50 @@
-From 7840af0604e6f6815d70924569125d6f58f934f4 Mon Sep 17 00:00:00 2001
+From 92b9b35c37fa2a489188cede9d5e27aaac4c3269 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sat, 23 Nov 2019 22:54:40 +0000
-Subject: [PATCH 03/13] ax25(4): ax25
+Subject: [PATCH 03/14] ax25(4): ax25
 
 ---
- lib/libc/Symbols.list     |   2 +
- lib/libc/net/Makefile.inc |   2 +-
- lib/libc/net/ax25.c       |  74 +++++++++++++++
- sys/conf/GENERIC          |   1 +
- sys/conf/files            |   3 +
- sys/netax25/if_ax25.h     | 113 +++++++++++++++++++++++
- sys/netax25/if_ax25subr.c | 183 ++++++++++++++++++++++++++++++++++++++
- 7 files changed, 377 insertions(+), 1 deletion(-)
+ distrib/sets/lists/comp/mi |   2 +
+ include/Makefile           |   2 +-
+ lib/libc/Symbols.list      |   2 +
+ lib/libc/net/Makefile.inc  |   2 +-
+ lib/libc/net/ax25.c        |  74 +++++++++++++++
+ sys/conf/GENERIC           |   1 +
+ sys/conf/files             |   3 +
+ sys/kern/Makefile          |   2 +-
+ sys/netax25/if_ax25.h      | 113 +++++++++++++++++++++++
+ sys/netax25/if_ax25subr.c  | 183 +++++++++++++++++++++++++++++++++++++
+ 10 files changed, 381 insertions(+), 3 deletions(-)
  create mode 100644 lib/libc/net/ax25.c
  create mode 100644 sys/netax25/if_ax25.h
  create mode 100644 sys/netax25/if_ax25subr.c
 
+diff --git a/distrib/sets/lists/comp/mi b/distrib/sets/lists/comp/mi
+index d6aae291d12..fc889e2b8bc 100644
+--- a/distrib/sets/lists/comp/mi
++++ b/distrib/sets/lists/comp/mi
+@@ -1011,6 +1011,8 @@
+ ./usr/include/net80211/ieee80211_regdomain.h
+ ./usr/include/net80211/ieee80211_rssadapt.h
+ ./usr/include/net80211/ieee80211_var.h
++./usr/include/netax25
++./usr/include/netax25/if_ax25.h
+ ./usr/include/netdb.h
+ ./usr/include/netgroup.h
+ ./usr/include/netinet
+diff --git a/include/Makefile b/include/Makefile
+index 30d4f65cf7c..c8bfc5cddbc 100644
+--- a/include/Makefile
++++ b/include/Makefile
+@@ -35,7 +35,7 @@ MFILES=	frame.h
+ LFILES=	endian.h fcntl.h syslog.h termios.h stdarg.h stdint.h varargs.h
+ 
+ DIRS=	arpa protocols rpc rpcsvc
+-LDIRS=	crypto ddb dev isofs miscfs msdosfs net netinet netinet6 \
++LDIRS=	crypto ddb dev isofs miscfs msdosfs net netax25 netinet netinet6 \
+ 	netmpls net80211 nfs ntfs scsi sys ufs uvm
+ 
+ # Places that need a prerequisite target met before includes
 diff --git a/lib/libc/Symbols.list b/lib/libc/Symbols.list
 index f9aa62ab6e8..e7cacfba399 100644
 --- a/lib/libc/Symbols.list
@@ -135,10 +164,10 @@ index 92240cf0ab3..0b51e631222 100644
  #mpath0		at root		# SCSI Multipathing
  #scsibus*	at mpath?
 diff --git a/sys/conf/files b/sys/conf/files
-index d6ada6f53a9..5aaa4a03ba1 100644
+index 0cef7842919..c921a4ecf1b 100644
 --- a/sys/conf/files
 +++ b/sys/conf/files
-@@ -1001,6 +1001,9 @@ file net/pfkeyv2.c			ipsec | tcp_signature
+@@ -1000,6 +1000,9 @@ file net/pfkeyv2.c			ipsec | tcp_signature
  file net/pfkeyv2_parsemessage.c		ipsec | tcp_signature
  file net/pfkeyv2_convert.c		ipsec | tcp_signature
  
@@ -148,6 +177,19 @@ index d6ada6f53a9..5aaa4a03ba1 100644
  # libx86emu
  file dev/x86emu/x86emu.c		x86emu
  file dev/x86emu/x86emu_util.c		x86emu
+diff --git a/sys/kern/Makefile b/sys/kern/Makefile
+index d6aacd8a443..9ba0b4e5bdb 100644
+--- a/sys/kern/Makefile
++++ b/sys/kern/Makefile
+@@ -38,7 +38,7 @@ DGEN=	conf \
+ 	lib/libkern/arch/${MACHINE_ARCH} \
+ 	miscfs miscfs/deadfs miscfs/fifofs \
+ 	msdosfs \
+-	net netinet netmpls \
++	net netax25 netinet netmpls \
+ 	nfs \
+ 	scsi \
+ 	sys \
 diff --git a/sys/netax25/if_ax25.h b/sys/netax25/if_ax25.h
 new file mode 100644
 index 00000000000..bd4d50da562

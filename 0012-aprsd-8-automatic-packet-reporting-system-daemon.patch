@@ -1,9 +1,11 @@
-From 8bba8772abf526659bd780dff888c435f79cd945 Mon Sep 17 00:00:00 2001
+From 3865c603f6d428ad84eb616445d164d99890f301 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Sat, 23 Nov 2019 22:55:51 +0000
-Subject: [PATCH 12/13] aprsd(8): automatic packet reporting system daemon
+Subject: [PATCH 12/14] aprsd(8): automatic packet reporting system daemon
 
 ---
+ distrib/sets/lists/base/mi  |   2 +
+ distrib/sets/lists/man/mi   |   2 +
  etc/Makefile                |   2 +-
  etc/rc                      |   2 +-
  etc/rc.conf                 |   1 +
@@ -17,7 +19,7 @@ Subject: [PATCH 12/13] aprsd(8): automatic packet reporting system daemon
  usr.sbin/aprsd/gps.c        |  68 ++++
  usr.sbin/aprsd/gps.h        |   7 +
  usr.sbin/aprsd/parse.y      | 625 ++++++++++++++++++++++++++++++++++++
- 13 files changed, 1532 insertions(+), 3 deletions(-)
+ 15 files changed, 1536 insertions(+), 3 deletions(-)
  create mode 100644 etc/rc.d/aprsd
  create mode 100644 usr.sbin/aprsd/Makefile
  create mode 100644 usr.sbin/aprsd/aprsd.8
@@ -28,8 +30,48 @@ Subject: [PATCH 12/13] aprsd(8): automatic packet reporting system daemon
  create mode 100644 usr.sbin/aprsd/gps.h
  create mode 100644 usr.sbin/aprsd/parse.y
 
+diff --git a/distrib/sets/lists/base/mi b/distrib/sets/lists/base/mi
+index 1a700dc80e0..0a99a64a6ce 100644
+--- a/distrib/sets/lists/base/mi
++++ b/distrib/sets/lists/base/mi
+@@ -139,6 +139,7 @@
+ ./etc/rc.d
+ ./etc/rc.d/amd
+ ./etc/rc.d/apmd
++./etc/rc.d/aprsd
+ ./etc/rc.d/bgpd
+ ./etc/rc.d/bootparamd
+ ./etc/rc.d/cron
+@@ -2481,6 +2482,7 @@
+ ./usr/sbin/adduser
+ ./usr/sbin/amd
+ ./usr/sbin/amq
++./usr/sbin/aprsd
+ ./usr/sbin/arp
+ ./usr/sbin/authpf
+ ./usr/sbin/authpf-noip
+diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
+index 8913b1a3f11..e99756c9782 100644
+--- a/distrib/sets/lists/man/mi
++++ b/distrib/sets/lists/man/mi
+@@ -2083,6 +2083,7 @@
+ ./usr/share/man/man5/acct.5
+ ./usr/share/man/man5/acme-client.conf.5
+ ./usr/share/man/man5/aliases.5
++./usr/share/man/man5/aprsd.conf.5
+ ./usr/share/man/man5/ar.5
+ ./usr/share/man/man5/bgpd.conf.5
+ ./usr/share/man/man5/bootparams.5
+@@ -2256,6 +2257,7 @@
+ ./usr/share/man/man8/amd64/pxeboot.8
+ ./usr/share/man/man8/amd64/wsmoused.8
+ ./usr/share/man/man8/amq.8
++./usr/share/man/man8/aprsd.8
+ ./usr/share/man/man8/arm64/MAKEDEV.8
+ ./usr/share/man/man8/arm64/apm.8
+ ./usr/share/man/man8/arm64/apmd.8
 diff --git a/etc/Makefile b/etc/Makefile
-index 4f378fd4f6f..6839285768f 100644
+index 23d0b762016..21240b0bb48 100644
 --- a/etc/Makefile
 +++ b/etc/Makefile
 @@ -57,7 +57,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.conf eigrpd.conf hostapd.conf \
