@@ -1,6 +1,6 @@
-From 92b9b35c37fa2a489188cede9d5e27aaac4c3269 Mon Sep 17 00:00:00 2001
+From 639e6152b973f7f688773377f451fca6bdc3ec99 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:54:40 +0000
+Date: Tue, 17 Dec 2019 21:07:59 +0000
 Subject: [PATCH 03/14] ax25(4): ax25
 
 ---
@@ -20,10 +20,10 @@ Subject: [PATCH 03/14] ax25(4): ax25
  create mode 100644 sys/netax25/if_ax25subr.c
 
 diff --git a/distrib/sets/lists/comp/mi b/distrib/sets/lists/comp/mi
-index d6aae291d12..fc889e2b8bc 100644
+index ae506e330fc..9c2fc521154 100644
 --- a/distrib/sets/lists/comp/mi
 +++ b/distrib/sets/lists/comp/mi
-@@ -1011,6 +1011,8 @@
+@@ -1012,6 +1012,8 @@
  ./usr/include/net80211/ieee80211_regdomain.h
  ./usr/include/net80211/ieee80211_rssadapt.h
  ./usr/include/net80211/ieee80211_var.h
@@ -499,5 +499,5 @@ index 00000000000..5f30ac68dbc
 +	return ax25buf;
 +}
 -- 
-2.23.0
+2.24.1
 

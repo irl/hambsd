@@ -1,6 +1,6 @@
-From 797df465804171b00c4b12287d046e9f68da4dfe Mon Sep 17 00:00:00 2001
+From 9f499d557330c460e5595cdf63213b4830768ab4 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sun, 24 Nov 2019 12:08:24 +0000
+Date: Tue, 17 Dec 2019 21:08:15 +0000
 Subject: [PATCH 07/14] libpcap: recognise DLT_AX25 as a link type
 
 ---
@@ -28,5 +28,5 @@ index 44d791b0644..91e5ec487c3 100644
  		/* FALLTHROUGH */
  	case DLT_RAW:
 -- 
-2.23.0
+2.24.1
 

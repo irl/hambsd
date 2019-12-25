@@ -1,31 +1,44 @@
-From 0f82ecbe90a0edadfa5d043aae60ca8e84d36543 Mon Sep 17 00:00:00 2001
+From bed7a65a1b2a5efd7d80d9716ef7316a9f293b96 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:56:19 +0000
+Date: Tue, 17 Dec 2019 21:08:26 +0000
 Subject: [PATCH 13/14] aprsisd(8): aprs-is daemon
 
 ---
+ distrib/sets/lists/base/mi |   1 +
  distrib/sets/lists/man/mi  |   1 +
  usr.sbin/Makefile          |   2 +-
  usr.sbin/aprsisd/Makefile  |   7 +
  usr.sbin/aprsisd/aprsisd.8 |  90 +++++++
  usr.sbin/aprsisd/aprsisd.c | 483 +++++++++++++++++++++++++++++++++++++
- 5 files changed, 582 insertions(+), 1 deletion(-)
+ 6 files changed, 583 insertions(+), 1 deletion(-)
  create mode 100644 usr.sbin/aprsisd/Makefile
  create mode 100644 usr.sbin/aprsisd/aprsisd.8
  create mode 100644 usr.sbin/aprsisd/aprsisd.c
 
+diff --git a/distrib/sets/lists/base/mi b/distrib/sets/lists/base/mi
+index 0a99a64a6ce..79cbb0bc01b 100644
+--- a/distrib/sets/lists/base/mi
++++ b/distrib/sets/lists/base/mi
+@@ -2483,6 +2483,7 @@
+ ./usr/sbin/amd
+ ./usr/sbin/amq
+ ./usr/sbin/aprsd
++./usr/sbin/aprsisd
+ ./usr/sbin/arp
+ ./usr/sbin/authpf
+ ./usr/sbin/authpf-noip
 diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
-index e99756c9782..716b9df5098 100644
+index 96b1d9794a4..20583ecbbeb 100644
 --- a/distrib/sets/lists/man/mi
 +++ b/distrib/sets/lists/man/mi
-@@ -2084,6 +2084,7 @@
- ./usr/share/man/man5/acme-client.conf.5
- ./usr/share/man/man5/aliases.5
- ./usr/share/man/man5/aprsd.conf.5
-+./usr/share/man/man5/aprsisd.conf.5
- ./usr/share/man/man5/ar.5
- ./usr/share/man/man5/bgpd.conf.5
- ./usr/share/man/man5/bootparams.5
+@@ -2262,6 +2262,7 @@
+ ./usr/share/man/man8/amd64/wsmoused.8
+ ./usr/share/man/man8/amq.8
+ ./usr/share/man/man8/aprsd.8
++./usr/share/man/man8/aprsisd.8
+ ./usr/share/man/man8/arm64/MAKEDEV.8
+ ./usr/share/man/man8/arm64/apm.8
+ ./usr/share/man/man8/arm64/apmd.8
 diff --git a/usr.sbin/Makefile b/usr.sbin/Makefile
 index a7f76f73800..3a080897d11 100644
 --- a/usr.sbin/Makefile
@@ -638,5 +651,5 @@ index 00000000000..7eb62a0cc77
 +	}
 +}
 -- 
-2.23.0
+2.24.1
 

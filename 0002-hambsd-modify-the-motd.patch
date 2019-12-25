@@ -1,6 +1,6 @@
-From 4688daa012c0b839037bb5b10ba7f21122562623 Mon Sep 17 00:00:00 2001
+From 41a84a890352baeb9ac5b3950ca4edc003d37ea2 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:49:15 +0000
+Date: Tue, 17 Dec 2019 21:07:55 +0000
 Subject: [PATCH 02/14] hambsd: modify the motd
 
 ---
@@ -31,5 +31,5 @@ index ff1dc9bb944..047662df624 100644
 +transmissions.
  
 -- 
-2.23.0
+2.24.1
 

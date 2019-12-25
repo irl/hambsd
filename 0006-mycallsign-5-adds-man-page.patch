@@ -1,6 +1,6 @@
-From d37d45a08e161753a9cf2a6f649d4eafa6c2db3a Mon Sep 17 00:00:00 2001
+From b4c48945f02eff788894cba556394be2517ca1ba Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:53:43 +0000
+Date: Tue, 17 Dec 2019 21:08:14 +0000
 Subject: [PATCH 06/14] mycallsign(5): adds man page
 
 ---
@@ -11,10 +11,10 @@ Subject: [PATCH 06/14] mycallsign(5): adds man page
  create mode 100644 share/man/man5/mycallsign.5
 
 diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
-index 5c825cd4268..94479bc7c8e 100644
+index a30e98a9a6c..6066bf592a1 100644
 --- a/distrib/sets/lists/man/mi
 +++ b/distrib/sets/lists/man/mi
-@@ -2143,6 +2143,7 @@
+@@ -2146,6 +2146,7 @@
  ./usr/share/man/man5/mk.conf.5
  ./usr/share/man/man5/moduli.5
  ./usr/share/man/man5/motd.5
@@ -82,5 +82,5 @@ index 00000000000..a43eb7e1c6c
 +.Xr aprsd 8 ,
 +.Xr iclcd 8
 -- 
-2.23.0
+2.24.1
 

@@ -1,6 +1,6 @@
-From 3865c603f6d428ad84eb616445d164d99890f301 Mon Sep 17 00:00:00 2001
+From d6926e970e8b385780cf3da9a20b9655d84915b6 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:55:51 +0000
+Date: Tue, 17 Dec 2019 21:08:24 +0000
 Subject: [PATCH 12/14] aprsd(8): automatic packet reporting system daemon
 
 ---
@@ -51,10 +51,10 @@ index 1a700dc80e0..0a99a64a6ce 100644
  ./usr/sbin/authpf
  ./usr/sbin/authpf-noip
 diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
-index 8913b1a3f11..e99756c9782 100644
+index c5d5644d68b..96b1d9794a4 100644
 --- a/distrib/sets/lists/man/mi
 +++ b/distrib/sets/lists/man/mi
-@@ -2083,6 +2083,7 @@
+@@ -2086,6 +2086,7 @@
  ./usr/share/man/man5/acct.5
  ./usr/share/man/man5/acme-client.conf.5
  ./usr/share/man/man5/aliases.5
@@ -62,7 +62,7 @@ index 8913b1a3f11..e99756c9782 100644
  ./usr/share/man/man5/ar.5
  ./usr/share/man/man5/bgpd.conf.5
  ./usr/share/man/man5/bootparams.5
-@@ -2256,6 +2257,7 @@
+@@ -2260,6 +2261,7 @@
  ./usr/share/man/man8/amd64/pxeboot.8
  ./usr/share/man/man8/amd64/wsmoused.8
  ./usr/share/man/man8/amq.8
@@ -71,7 +71,7 @@ index 8913b1a3f11..e99756c9782 100644
  ./usr/share/man/man8/arm64/apm.8
  ./usr/share/man/man8/arm64/apmd.8
 diff --git a/etc/Makefile b/etc/Makefile
-index 23d0b762016..21240b0bb48 100644
+index 53d95280a09..e188c2cf8ba 100644
 --- a/etc/Makefile
 +++ b/etc/Makefile
 @@ -57,7 +57,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.conf eigrpd.conf hostapd.conf \
@@ -1704,5 +1704,5 @@ index 00000000000..a4ab392a471
 +	return (0);
 +}
 -- 
-2.23.0
+2.24.1
 

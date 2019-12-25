@@ -1,6 +1,6 @@
-From 900bb098556e2e504bbf1c2f43729933716c0f4b Mon Sep 17 00:00:00 2001
+From c910da59834b9444e8cc0c7f313185779f43b248 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:50:42 +0000
+Date: Tue, 17 Dec 2019 21:08:17 +0000
 Subject: [PATCH 09/14] ldattach(8): add kiss support
 
 ---
@@ -54,5 +54,5 @@ index 042f119cefa..a604198c537 100644
  		syslog(LOG_ERR, "unknown line discipline %s", disc);
  		goto bail_out;
 -- 
-2.23.0
+2.24.1
 

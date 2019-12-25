@@ -1,20 +1,60 @@
-From db9faf7103a57f932559ac41620994fea5cf44d8 Mon Sep 17 00:00:00 2001
+From a52e96adce6cd71f2295f9002e86a65d2035f4d8 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Mon, 16 Dec 2019 20:23:15 +0000
+Date: Tue, 17 Dec 2019 21:08:30 +0000
 Subject: [PATCH 14/14] rkissd(8): remote KISS daemon
 
 ---
- usr.sbin/rkissd/Makefile |   9 ++
- usr.sbin/rkissd/rkissd.8 |  50 +++++++++++
- usr.sbin/rkissd/rkissd.c | 189 +++++++++++++++++++++++++++++++++++++++
- 3 files changed, 248 insertions(+)
+ distrib/sets/lists/base/mi |   1 +
+ distrib/sets/lists/man/mi  |   1 +
+ usr.sbin/Makefile          |   2 +-
+ usr.sbin/rkissd/Makefile   |   9 ++
+ usr.sbin/rkissd/rkissd.8   |  50 ++++++++++
+ usr.sbin/rkissd/rkissd.c   | 189 +++++++++++++++++++++++++++++++++++++
+ 6 files changed, 251 insertions(+), 1 deletion(-)
  create mode 100644 usr.sbin/rkissd/Makefile
  create mode 100644 usr.sbin/rkissd/rkissd.8
  create mode 100644 usr.sbin/rkissd/rkissd.c
 
+diff --git a/distrib/sets/lists/base/mi b/distrib/sets/lists/base/mi
+index 79cbb0bc01b..345a0ebd757 100644
+--- a/distrib/sets/lists/base/mi
++++ b/distrib/sets/lists/base/mi
+@@ -2601,6 +2601,7 @@
+ ./usr/sbin/revnetgroup
+ ./usr/sbin/ripctl
+ ./usr/sbin/ripd
++./usr/sbin/rkissd
+ ./usr/sbin/rmgroup
+ ./usr/sbin/rmt
+ ./usr/sbin/rmuser
+diff --git a/distrib/sets/lists/man/mi b/distrib/sets/lists/man/mi
+index 20583ecbbeb..dd894e3b57f 100644
+--- a/distrib/sets/lists/man/mi
++++ b/distrib/sets/lists/man/mi
+@@ -2493,6 +2493,7 @@
+ ./usr/share/man/man8/revnetgroup.8
+ ./usr/share/man/man8/ripctl.8
+ ./usr/share/man/man8/ripd.8
++./usr/share/man/man8/rkissd.8
+ ./usr/share/man/man8/rmgroup.8
+ ./usr/share/man/man8/rmt.8
+ ./usr/share/man/man8/route.8
+diff --git a/usr.sbin/Makefile b/usr.sbin/Makefile
+index 3a080897d11..386deb4664d 100644
+--- a/usr.sbin/Makefile
++++ b/usr.sbin/Makefile
+@@ -14,7 +14,7 @@ SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd aprsd aprsisd arp \
+ 	pcidump pkg_add portmap pppd procmap pstat pwd_mkdb \
+ 	quot quotaon ractl rad radiusctl radiusd rarpd rbootd \
+ 	rcctl rdate rdsetroot rebound relayctl relayd repquota ripctl ripd \
+-	rmt route6d rpc.bootparamd rpc.lockd rpc.statd rpki-client \
++	rkissd rmt route6d rpc.bootparamd rpc.lockd rpc.statd rpki-client \
+ 	sa sasyncd sensorsd slaacctl slowcgi smtpd \
+ 	snmpd spamdb switchctl switchd syslogc syslogd sysmerge \
+ 	syspatch sysupgrade tcpdrop tcpdump tftp-proxy tftpd tokenadm \
 diff --git a/usr.sbin/rkissd/Makefile b/usr.sbin/rkissd/Makefile
 new file mode 100644
-index 00000000000..ef910069e0c
+index 00000000000..e3ca0cfb2c8
 --- /dev/null
 +++ b/usr.sbin/rkissd/Makefile
 @@ -0,0 +1,9 @@
@@ -24,7 +64,7 @@ index 00000000000..ef910069e0c
 +SRCS=	rkissd.c
 +MAN=	rkissd.8
 +
-+CFLAGS= -lutil
++LDFLAGS= -lutil
 +
 +.include <bsd.prog.mk>
 diff --git a/usr.sbin/rkissd/rkissd.8 b/usr.sbin/rkissd/rkissd.8
@@ -279,5 +319,5 @@ index 00000000000..73b5ef9f3c9
 +	rkiss_loop(lfd, rfd);
 +}
 -- 
-2.23.0
+2.24.1
 

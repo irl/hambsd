@@ -1,6 +1,6 @@
-From b33d629abd08c5f40839f4e743c5b6667a6d3a23 Mon Sep 17 00:00:00 2001
+From 18f5b30e7727a4591584502f3373060ca9239df5 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:48:23 +0000
+Date: Tue, 17 Dec 2019 21:07:54 +0000
 Subject: [PATCH 01/14] pstat(8): display text for msts/endrun line discs
 
 ---
@@ -51,5 +51,5 @@ index 1684975c57f..986dee90b6f 100644
  		(void)printf("%d\n", tp->t_line);
  		break;
 -- 
-2.23.0
+2.24.1
 

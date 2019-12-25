@@ -1,27 +1,29 @@
-From db1d6494ef2364bd6934e4834fc6fc4b77d203ec Mon Sep 17 00:00:00 2001
+From 82ddcf2837994b9f1eae5cd88e0ebd5b22004bca Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
-Date: Sat, 23 Nov 2019 22:52:20 +0000
+Date: Tue, 17 Dec 2019 21:08:02 +0000
 Subject: [PATCH 04/14] axtap(4): ax25 tunnel pseudo-device
 
 ---
  etc/MAKEDEV.common              |   2 +
  etc/etc.amd64/MAKEDEV.md        |   2 +
+ etc/etc.i386/MAKEDEV.md         |   3 +
  etc/etc.sparc64/MAKEDEV.md      |   2 +
  share/man/man4/tap.4            |  11 ++-
  sys/arch/amd64/amd64/conf.c     |   1 +
+ sys/arch/i386/i386/conf.c       |   1 +
  sys/arch/sparc64/sparc64/conf.c |   1 +
  sys/net/bpf.c                   |   1 +
  sys/net/if_tun.c                | 151 ++++++++++++++++++++++++++++++--
  sys/net/if_tun.h                |   1 +
  sys/net/if_types.h              |   3 +
  sys/sys/conf.h                  |   1 +
- 11 files changed, 165 insertions(+), 11 deletions(-)
+ 13 files changed, 169 insertions(+), 11 deletions(-)
 
 diff --git a/etc/MAKEDEV.common b/etc/MAKEDEV.common
-index bd611225f27..a3efb7cfd2b 100644
+index c187df748d6..590072a1727 100644
 --- a/etc/MAKEDEV.common
 +++ b/etc/MAKEDEV.common
-@@ -444,11 +444,13 @@ _mkdev(bpf, bpf, {-M bpf c major_bpf_c 0 600
+@@ -449,11 +449,13 @@ _mkdev(bpf, bpf, {-M bpf c major_bpf_c 0 600
  	M bpf0 c major_bpf_c 0 600-})dnl
  _mkdev(tun, {-tun*-}, {-M tun$U c major_tun_c $U 600-}, 600)dnl
  _mkdev(tap, {-tap*-}, {-M tap$U c major_tap_c $U 600-}, 600)dnl
@@ -36,18 +38,46 @@ index bd611225f27..a3efb7cfd2b 100644
  __devitem(rnd, *random, In-kernel random data source,random)dnl
  _mkdev(rnd, *random, {-M urandom c major_rnd_c 0 644
 diff --git a/etc/etc.amd64/MAKEDEV.md b/etc/etc.amd64/MAKEDEV.md
-index c2a2c83b529..ba4bfa80990 100644
+index f46b52bd7d6..6c545d2ebf8 100644
 --- a/etc/etc.amd64/MAKEDEV.md
 +++ b/etc/etc.amd64/MAKEDEV.md
-@@ -87,6 +87,7 @@ _DEV(rmidi, 52)
+@@ -88,6 +88,7 @@ _DEV(rmidi, 52)
  _DEV(speak, 27)
  _DEV(tun, 40)
  _DEV(tap, 93)
-+_DEV(axtap, 98)
++_DEV(axtap, 99)
  _DEV(tuner, 49)
  _DEV(uk, 20)
  _DEV(vi, 44)
-@@ -123,6 +124,7 @@ target(all, pty, 0)dnl
+@@ -124,6 +125,7 @@ target(all, pty, 0)dnl
+ target(all, bio)dnl
+ target(all, tun, 0, 1, 2, 3)dnl
+ target(all, tap, 0, 1, 2, 3)dnl
++target(all, axtap, 0, 1, 2, 3)dnl
+ target(all, xy, 0, 1, 2, 3)dnl
+ target(all, rd, 0)dnl
+ target(all, cd, 0, 1)dnl
+diff --git a/etc/etc.i386/MAKEDEV.md b/etc/etc.i386/MAKEDEV.md
+index ea3ff2783f8..514169a059d 100644
+--- a/etc/etc.i386/MAKEDEV.md
++++ b/etc/etc.i386/MAKEDEV.md
+@@ -75,6 +75,7 @@ _DEV(drm, 88)
+ _DEV(fdesc, 22)
+ _DEV(fuse, 93)
+ _DEV(gpio, 83)
++_DEV(gpr, 80)
+ _DEV(hotplug, 82)
+ _DEV(ipmi, 96)
+ _DEV(joy, 26)
+@@ -90,6 +91,7 @@ _DEV(rmidi, 52)
+ _DEV(speak, 27)
+ _DEV(tun, 40)
+ _DEV(tap, 94)
++_DEV(axtap, 99)
+ _DEV(tuner, 49)
+ _DEV(uk, 20)
+ _DEV(vi, 44)
+@@ -125,6 +127,7 @@ target(all, pty, 0)dnl
  target(all, bio)dnl
  target(all, tun, 0, 1, 2, 3)dnl
  target(all, tap, 0, 1, 2, 3)dnl
@@ -56,18 +86,18 @@ index c2a2c83b529..ba4bfa80990 100644
  target(all, rd, 0)dnl
  target(all, cd, 0, 1)dnl
 diff --git a/etc/etc.sparc64/MAKEDEV.md b/etc/etc.sparc64/MAKEDEV.md
-index 037a3840aed..44f341bc712 100644
+index 125eaa882b9..7372b967c0c 100644
 --- a/etc/etc.sparc64/MAKEDEV.md
 +++ b/etc/etc.sparc64/MAKEDEV.md
-@@ -122,6 +122,7 @@ _DEV(rmidi, 68)
+@@ -123,6 +123,7 @@ _DEV(rmidi, 68)
  _DEV(rnd, 119)
  _DEV(tun, 111)
  _DEV(tap, 135)
-+_DEV(axtap, 137)
++_DEV(axtap, 138)
  _DEV(uk, 60)
  _DEV(uperf, 25)
  _DEV(vi, 44)
-@@ -164,6 +165,7 @@ target(all, pty, 0)dnl
+@@ -165,6 +166,7 @@ target(all, pty, 0)dnl
  target(all, bio)dnl
  target(all, tun, 0, 1, 2, 3)dnl
  target(all, tap, 0, 1, 2, 3)dnl
@@ -113,26 +143,38 @@ index 7f613f4ad8e..b7de79953c2 100644
  Each device has an exclusive open property: it cannot be opened
  if it is already open and in use by another process.
 diff --git a/sys/arch/amd64/amd64/conf.c b/sys/arch/amd64/amd64/conf.c
-index e96dda7be06..c6b1a301da4 100644
+index 6330f6e442d..9c48712d2dd 100644
 --- a/sys/arch/amd64/amd64/conf.c
 +++ b/sys/arch/amd64/amd64/conf.c
-@@ -297,6 +297,7 @@ struct cdevsw	cdevsw[] =
- 	cdev_pvbus_init(NPVBUS,pvbus),	/* 95: pvbus(4) control interface */
+@@ -299,6 +299,7 @@ struct cdevsw	cdevsw[] =
  	cdev_ipmi_init(NIPMI,ipmi),	/* 96: ipmi */
  	cdev_switch_init(NSWITCH,switch), /* 97: switch(4) control interface */
-+	cdev_tun_init(NTUN,axtap),	/* 98: AX.25 network tunnel */
+ 	cdev_fido_init(NFIDO,fido),	/* 98: FIDO/U2F security keys */
++	cdev_tun_init(NTUN,axtap),	/* 99: AX.25 network tunnel */
+ };
+ int	nchrdev = nitems(cdevsw);
+ 
+diff --git a/sys/arch/i386/i386/conf.c b/sys/arch/i386/i386/conf.c
+index adb6e4bef1e..61bdb2ab90d 100644
+--- a/sys/arch/i386/i386/conf.c
++++ b/sys/arch/i386/i386/conf.c
+@@ -292,6 +292,7 @@ struct cdevsw	cdevsw[] =
+ 	cdev_ipmi_init(NIPMI,ipmi),	/* 96: ipmi */
+ 	cdev_switch_init(NSWITCH,switch), /* 97: switch(4) control interface */
+ 	cdev_fido_init(NFIDO,fido),	/* 98: FIDO/U2F security key */
++	cdev_switch_init(NTUN,axtap),	/* 99: AX.25 network tunnel */
  };
  int	nchrdev = nitems(cdevsw);
  
 diff --git a/sys/arch/sparc64/sparc64/conf.c b/sys/arch/sparc64/sparc64/conf.c
-index e0e45b7f9f4..fd506f8aadd 100644
+index f7afcfeab56..60c2e72ed21 100644
 --- a/sys/arch/sparc64/sparc64/conf.c
 +++ b/sys/arch/sparc64/sparc64/conf.c
-@@ -292,6 +292,7 @@ struct cdevsw	cdevsw[] =
- 	cdev_fuse_init(NFUSE,fuse),	/* 134: fuse */
+@@ -294,6 +294,7 @@ struct cdevsw	cdevsw[] =
  	cdev_tun_init(NTUN,tap),	/* 135: Ethernet network tunnel */
  	cdev_switch_init(NSWITCH,switch), /* 136: switch(4) control interface */
-+	cdev_tun_init(NTUN,axtap),	/* 137: AX.25 network tunnel */
+ 	cdev_fido_init(NFIDO,fido),	/* 137: FIDO/U2F security key */
++	cdev_tun_init(NTUN,axtap),	/* 138: AX.25 network tunnel */
  };
  int	nchrdev = nitems(cdevsw);
  
@@ -491,10 +533,10 @@ index dbd9e84a7fe..2c597212871 100644
 +
  #endif /* _NET_IF_TYPES_H_ */
 diff --git a/sys/sys/conf.h b/sys/sys/conf.h
-index 48118f7f670..af3aedea9e7 100644
+index b43c8374fa5..8123b39f26a 100644
 --- a/sys/sys/conf.h
 +++ b/sys/sys/conf.h
-@@ -583,6 +583,7 @@ cdev_decl(pf);
+@@ -590,6 +590,7 @@ cdev_decl(pf);
  
  cdev_decl(tun);
  cdev_decl(tap);
@@ -503,5 +545,5 @@ index 48118f7f670..af3aedea9e7 100644
  cdev_decl(pppx);
  
 -- 
-2.23.0
+2.24.1
 
