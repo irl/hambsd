@@ -1,7 +1,7 @@
 From 3d16867388f379fe5bdb3319f4f01aca7885a806 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:18 +0000
-Subject: [PATCH 10/14] pstat(8): add kiss support
+Subject: [PATCH 10/20] pstat(8): add kiss support
 
 ---
  usr.sbin/pstat/pstat.8 | 7 +++++--

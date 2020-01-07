@@ -1,0 +1,25 @@
+From 7b865d264de27e9db491d1db97c5c45fbc62b9e8 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Tue, 7 Jan 2020 19:08:32 +0000
+Subject: [PATCH 17/20] axkiss(4) SIOCSIFLLADDR
+
+---
+ sys/net/if_axkiss.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/sys/net/if_axkiss.c b/sys/net/if_axkiss.c
+index 559e9faf763..6d1adb2eed7 100644
+--- a/sys/net/if_axkiss.c
++++ b/sys/net/if_axkiss.c
+@@ -164,8 +164,6 @@ axkiss_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
+ 		break;
+ 
+ 	case SIOCSIFLLADDR:
+-		error = EOPNOTSUPP;
+-		//error = kiss_set_lladdr(sc, ifr);
+ 		break;
+ 
+ 	case SIOCSIFMTU:
+-- 
+2.24.1
+

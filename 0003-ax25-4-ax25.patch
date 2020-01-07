@@ -1,7 +1,7 @@
 From 639e6152b973f7f688773377f451fca6bdc3ec99 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:07:59 +0000
-Subject: [PATCH 03/14] ax25(4): ax25
+Subject: [PATCH 03/20] ax25(4): ax25
 
 ---
  distrib/sets/lists/comp/mi |   2 +

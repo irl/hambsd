@@ -1,7 +1,7 @@
 From 41a84a890352baeb9ac5b3950ca4edc003d37ea2 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:07:55 +0000
-Subject: [PATCH 02/14] hambsd: modify the motd
+Subject: [PATCH 02/20] hambsd: modify the motd
 
 ---
  etc/motd | 15 ++++++++-------

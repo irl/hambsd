@@ -1,7 +1,7 @@
 From a52e96adce6cd71f2295f9002e86a65d2035f4d8 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:30 +0000
-Subject: [PATCH 14/14] rkissd(8): remote KISS daemon
+Subject: [PATCH 14/20] rkissd(8): remote KISS daemon
 
 ---
  distrib/sets/lists/base/mi |   1 +

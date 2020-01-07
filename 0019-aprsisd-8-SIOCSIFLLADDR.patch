@@ -1,0 +1,308 @@
+From 097353091580ca53887856b91b049ee89d156fc4 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Tue, 7 Jan 2020 19:10:50 +0000
+Subject: [PATCH 19/20] aprsisd(8) SIOCSIFLLADDR
+
+---
+ usr.sbin/aprsisd/aprsisd.8 |  24 +++------
+ usr.sbin/aprsisd/aprsisd.c | 107 +++++++++++++++----------------------
+ 2 files changed, 51 insertions(+), 80 deletions(-)
+
+diff --git a/usr.sbin/aprsisd/aprsisd.8 b/usr.sbin/aprsisd/aprsisd.8
+index 1ede18a7393..831dde5fd44 100644
+--- a/usr.sbin/aprsisd/aprsisd.8
++++ b/usr.sbin/aprsisd/aprsisd.8
+@@ -7,10 +7,10 @@
+ .Sh SYNOPSIS
+ .Nm aprsisd
+ .Op Fl D
+-.Op Fl S Ar ssid
+ .Op Fl i Ar axtapN
+ .Op Fl p Ar passcode
+ .Op Fl f Ar filter
++.Ar callsign Ns Op Pf - Ar ssid
+ .Op Ar server Op Ar port
+ .Sh DESCRIPTION
+ APRS-IS is an Internet-based network which inter-connects various APRS radio
+@@ -24,10 +24,6 @@ virtual network interface.
+ .Nm
+ can also authenticate to the server and set an optional filter.
+ .Pp
+-By default the callsign from
+-.Xr mycallsign 5
+-will be used.
+-.Pp
+ .Nm
+ itself will not produce or consume packets.
+ A separate application, for example
+@@ -37,14 +33,6 @@ must be used for that purpose.
+ .Bl -tag -width Ds
+ .It Fl D
+ Do not daemonize.
+-.It Fl S Ar ssid
+-Set the SSID for the interface.
+-Combined with your callsign this must be
+-unique in the network, which usually means globally unique.
+-See
+-.Xr aprs 7
+-for commonly used SSIDs for different station types.
+-The default SSID is 0 (zero).
+ .It Fl i Ar axtapN
+ Use a specific
+ .Xr axtap 4
+@@ -61,6 +49,12 @@ By default the connection will be unverified, meaning that the connection will
+ be receive only (upload to APRS-IS will be forbidden).
+ .It Fl f Ar filter
+ Set a filter to be used with the server.
++.It Ar callsign Ns Op Pf - Ar ssid
++Set the link-layer address for the interface to the specified callsign and
++SSID.
++This will also be used as the login for APRS-IS.
++It must be a valid AX.25 address.
++The default SSID is 0 (zero).
+ .It Ar server Op Ar port
+ Set the server to connect to, optionally specifying the TCP port.
+ By default the round-robin DNS name
+@@ -72,12 +66,10 @@ or a colon-seperated IPv6 address.
+ .Sh DIAGNOSTICS
+ .Nm
+ will send status information, warnings and errors to
+-.Xr syslog 8
++.Xr syslogd 8
+ using facility daemon and levels err, warn and info.
+ .Sh SEE ALSO
+ .Xr axtap 4 ,
+-.Xr mycallsign 5 ,
+-.Xr aprs 7 ,
+ .Xr aprsd 8
+ .Sh HISTORY
+ .Nm
+diff --git a/usr.sbin/aprsisd/aprsisd.c b/usr.sbin/aprsisd/aprsisd.c
+index 7eb62a0cc77..aa496780546 100644
+--- a/usr.sbin/aprsisd/aprsisd.c
++++ b/usr.sbin/aprsisd/aprsisd.c
+@@ -45,16 +45,15 @@ int isd, tap;
+ static __dead void usage(void);
+ static void daemonize(void);
+ static void signal_handler(int sig);
+-static char *read_mycallsign(void);
+ static char *aprsis_pass(char *);
+ static int ax25_input(char *, int);
+ static void ax25_output(char *, int);
+ static char *tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
+ static void tnc2_input(char *);
+ static int tnc2_output(char *);
+-static void aprsis_login_str(char *, char *, char *, char *, char *);
+-static void aprsis_remote_open(char *, char *, char *, char *, char *, char *);
+-static void aprsis_local_open(char *);
++static void aprsis_login_str(char *, char *, char *, char *);
++static void aprsis_remote_open(char *, char *, char *, char *, char *);
++static void aprsis_local_open(char *, char *);
+ static int aprsis_local_shuffle(char *, char *, int);
+ static void aprsis_loop(void);
+ int main(int, char **);
+@@ -64,7 +63,7 @@ usage(void)
+ {
+ 	extern char *__progname;
+ 
+-	fprintf(stderr, "usage: %s [-D] [-S ssid] [-i axtapN] [-p passcode] [-f filter] [server [port]]\n",
++	fprintf(stderr, "usage: %s [-D] [-i axtapN] [-p passcode] [-f filter] callsign [server [port]]\n",
+ 	    __progname);
+ 	exit(1);
+ }
+@@ -96,26 +95,6 @@ daemonize(void)
+ 	signal(SIGTERM, signal_handler); /* catch kill signal */
+ }
+ 
+-static char *
+-read_mycallsign(void)
+-{
+-	FILE	*mcp;
+-	char	*call, *nl;
+-	size_t	 callsize = 0;
+-	ssize_t	 calllen;
+-
+-	call = NULL;
+-
+-	if ((mcp = fopen("/etc/mycallsign", "r")) == NULL)
+-		err(1, "fopen");
+-	if ((calllen = getline(&call, &callsize, mcp)) != -1) {
+-		if ((nl = strchr(call, '\n')) != NULL)
+-			nl[0] = '\0';
+-		return call;
+-	}
+-	err(1, "getline");
+-}
+-
+ static char *
+ aprsis_pass(char *call)
+ {
+@@ -190,6 +169,7 @@ tnc2_hdr_to_ax25(struct sockaddr_ax25 *saddr, struct sockaddr_ax25 *daddr,
+ 			as[ep - bp - 1] = '\0';
+ 		if ((addr = ax25_aton(as)) == NULL)
+ 			return NULL;
++		saddr->sax_path[dn].ax25_addr_octet[6] |= AX25_RESERVED_MASK;
+ 		if (h)
+ 			saddr->sax_path[dn].ax25_addr_octet[6] |= AX25_CR_MASK;
+ 		switch (dn) {
+@@ -253,15 +233,11 @@ get_in_addr(struct sockaddr *sa)
+ }
+ 
+ static void
+-aprsis_login_str(char *login, char *call, char *ssid, char *pass, char *filter)
++aprsis_login_str(char *login, char *call, char *pass, char *filter)
+ {
+ 	memset(login, 0, 512);
+ 	strlcpy(login, "user ", 512);
+ 	strlcat(login, call, 512);
+-	if (strcmp(ssid, "0") != 0) {
+-		strlcat(login, "-", 512);
+-		strlcat(login, ssid, 512);
+-	}
+ 	strlcat(login, " pass ", 512);
+ 	strlcat(login, pass, 512);
+ 	strlcat(login, " vers HamBSD-aprsisd 0.0-dev", 512);
+@@ -273,7 +249,7 @@ aprsis_login_str(char *login, char *call, char *ssid, char *pass, char *filter)
+ }
+ 
+ static void
+-aprsis_remote_open(char *server, char *port, char *call, char *ssid, char *pass,
++aprsis_remote_open(char *server, char *port, char *call, char *pass,
+     char *filter)
+ {
+ 	struct addrinfo hints, *servinfo, *p;
+@@ -316,7 +292,7 @@ aprsis_remote_open(char *server, char *port, char *call, char *ssid, char *pass,
+ 	if (strcmp(pass, "please") == 0)
+ 		pass = aprsis_pass(call);
+ 	login = malloc(512);
+-	aprsis_login_str(login, call, ssid, pass, filter);
++	aprsis_login_str(login, call, pass, filter);
+ 	if (write(isd, login, strlen(login)) == -1)
+ 		err(1, "write");
+ 
+@@ -326,30 +302,40 @@ aprsis_remote_open(char *server, char *port, char *call, char *ssid, char *pass,
+ }
+ 
+ static void
+-aprsis_local_open(char *interface)
++aprsis_local_open(char *interface, char *lladdr)
+ {
++	struct ifreq ifr;
+ 	struct tuninfo ti;
+ 	char ifpath[PATH_MAX];
+-	int i;
++	int i, sock;
+ 
+ 	if (interface != NULL) {
++		if (strlen(interface) < 2)
++			err(1, "interface name too short");
+ 		snprintf(ifpath, PATH_MAX, "/dev/%s", interface);
+ 		if ((tap = open(ifpath, O_RDWR)) == -1)
+ 			return;
+-		ioctl(tap, TUNGIFINFO, &ti);
+-		ti.flags = IFF_UP | IFF_POINTOPOINT;
+-		ioctl(tap, TUNSIFINFO, &ti);
+-		return;
+-	}
+-	for (i = 0; i < 100; i++) {
+-		snprintf(ifpath, PATH_MAX, "/dev/axtap%d", i);
+-		if ((tap = open(ifpath, O_RDWR)) == -1)
+-			continue;
+-		ioctl(tap, TUNGIFINFO, &ti);
+-		ti.flags = IFF_UP | IFF_POINTOPOINT;
+-		ioctl(tap, TUNSIFINFO, &ti);
+-		return;
++	} else {
++		for (i = 0; i < 100; i++) {
++			snprintf(ifpath, PATH_MAX, "/dev/axtap%d", i);
++			if ((tap = open(ifpath, O_RDWR)) != -1)
++				break;
++		}
+ 	}
++	ioctl(tap, TUNGIFINFO, &ti);
++	ti.flags = IFF_UP | IFF_POINTOPOINT;
++	ioctl(tap, TUNSIFINFO, &ti);
++
++	strlcpy(ifr.ifr_name, &ifpath[5], sizeof(ifr.ifr_name));
++	ifr.ifr_addr.sa_len = AX25_ADDR_LEN;
++	ifr.ifr_addr.sa_family = AF_LINK;
++	memcpy(ifr.ifr_addr.sa_data, ax25_aton(lladdr), AX25_ADDR_LEN);
++
++	sock = socket(AF_INET, SOCK_DGRAM, 0);
++
++	if (ioctl(sock, SIOCSIFLLADDR, &ifr) == -1)
++		err(1, "SIOCSIFLLADDR");
++	
+ }
+ 
+ /*
+@@ -415,20 +401,18 @@ aprsis_loop(void)
+ int
+ main(int argc, char **argv)
+ {
+-	char *call, ch, *filter, *interface, *pass, *port, *server, *ssid;
++	char *call, ch, *filter, *interface, *pass, *port, *server;
+ 	const char *errstr;
+ 	int daemon;
+ 
+ 	daemon = 1;
+-	call = read_mycallsign();
+-	ssid = "0";
+ 	pass = "-1";
+ 	filter = NULL;
+ 	interface = NULL;
+ 	server = "rotate.aprs2.net";
+ 	port = "14580";
+ 
+-	while ((ch = getopt(argc, argv, "Di:S:p:f:")) != -1) {
++	while ((ch = getopt(argc, argv, "Di:p:f:")) != -1) {
+ 		switch (ch) {
+ 		case 'D':
+ 			daemon = 0;
+@@ -436,14 +420,6 @@ main(int argc, char **argv)
+ 		case 'i':
+ 			interface = optarg;
+ 			break;
+-		case 'S':
+-			strtonum(optarg, 0, 15, &errstr);
+-			if (errstr) {
+-				warnx("SSID is %s: %s", errstr, optarg);
+-				usage();
+-			}
+-			ssid = optarg;
+-			break;
+ 		case 'p':
+ 			pass = optarg;
+ 			break;
+@@ -457,12 +433,15 @@ main(int argc, char **argv)
+ 	argc -= optind;
+ 	argv += optind;
+ 
+-	if (argc > 0)
+-		server = argv[0];
++	if (argc < 1)
++		usage();
++	call = argv[0];
+ 	if (argc > 1)
+-		port = argv[1];
++		server = argv[1];
++	if (argc > 2)
++		port = argv[2];
+ 
+-	aprsis_local_open(interface);
++	aprsis_local_open(interface, call);
+ 	if (tap == -1)
+ 		err(1, "tap open");
+ 
+@@ -475,7 +454,7 @@ main(int argc, char **argv)
+ 		err(1, "pledge");
+ 
+ 	for (;;) {
+-		aprsis_remote_open(server, port, call, ssid, pass, filter);
++		aprsis_remote_open(server, port, call, pass, filter);
+ 		aprsis_loop();
+ 		syslog(LOG_DAEMON | LOG_INFO, "reconnecting in 30 seconds...");
+ 		sleep(30);
+-- 
+2.24.1
+

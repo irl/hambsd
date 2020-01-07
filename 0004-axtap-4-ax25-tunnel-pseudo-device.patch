@@ -1,7 +1,7 @@
 From 82ddcf2837994b9f1eae5cd88e0ebd5b22004bca Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:02 +0000
-Subject: [PATCH 04/14] axtap(4): ax25 tunnel pseudo-device
+Subject: [PATCH 04/20] axtap(4): ax25 tunnel pseudo-device
 
 ---
  etc/MAKEDEV.common              |   2 +

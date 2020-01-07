@@ -1,7 +1,7 @@
 From 400cb98f7b0202806d32c5df8c187791a204fd61 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:21 +0000
-Subject: [PATCH 11/14] iclcd(8): identification compliant with license
+Subject: [PATCH 11/20] iclcd(8): identification compliant with license
  conditions
 
 ---

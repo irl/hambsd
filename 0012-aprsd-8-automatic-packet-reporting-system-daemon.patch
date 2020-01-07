@@ -1,7 +1,7 @@
 From d6926e970e8b385780cf3da9a20b9655d84915b6 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:24 +0000
-Subject: [PATCH 12/14] aprsd(8): automatic packet reporting system daemon
+Subject: [PATCH 12/20] aprsd(8): automatic packet reporting system daemon
 
 ---
  distrib/sets/lists/base/mi  |   2 +

@@ -1,7 +1,7 @@
 From b4c48945f02eff788894cba556394be2517ca1ba Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:14 +0000
-Subject: [PATCH 06/14] mycallsign(5): adds man page
+Subject: [PATCH 06/20] mycallsign(5): adds man page
 
 ---
  distrib/sets/lists/man/mi   |  1 +

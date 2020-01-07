@@ -1,0 +1,47 @@
+From 8d06d8d704ee0744b436b9f79f65b53a7483c561 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Tue, 7 Jan 2020 19:09:01 +0000
+Subject: [PATCH 18/20] axtap(4) SIOCSIFLLADDR
+
+---
+ sys/net/if_tun.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/sys/net/if_tun.c b/sys/net/if_tun.c
+index 101f7bfc2c2..60994d53363 100644
+--- a/sys/net/if_tun.c
++++ b/sys/net/if_tun.c
+@@ -64,6 +64,7 @@
+ 
+ #include <netinet/in.h>
+ #include <netinet/if_ether.h>
++#include <netax25/if_ax25.h>
+ 
+ #ifdef PIPEX
+ #include <net/pipex.h>
+@@ -296,11 +297,7 @@ tun_create(struct if_clone *ifc, int unit, int flags)
+ 	        ifp->if_mtu = ETHERMTU;
+ 
+ 		if_attach(ifp);
+-		if_alloc_sadl(ifp);
+-#if NBPFILTER > 0
+-		bpfattach(&ifp->if_bpf, ifp, DLT_AX25, 0);
+-#endif
+-
++		ax25_ifattach(ifp);
+ 	} else {
+ 		if (tun_list_insert(&tap_softc_list, sc) != 0)
+ 			goto exists;
+@@ -632,6 +629,9 @@ tun_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
+ 	default:
+ 		if (sc->sc_flags & TUN_LAYER2)
+ 			error = ether_ioctl(ifp, &sc->sc_ac, cmd, data);
++		else if ((sc->sc_flags & TUN_AX25) &&
++		    (cmd == SIOCSIFLLADDR))
++			error = 0;
+ 		else
+ 			error = ENOTTY;
+ 	}
+-- 
+2.24.1
+

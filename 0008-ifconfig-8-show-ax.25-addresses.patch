@@ -1,7 +1,7 @@
 From 53bcbda707f812926e92f267254ccf02aed0e6de Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:16 +0000
-Subject: [PATCH 08/14] ifconfig(8): show ax.25 addresses
+Subject: [PATCH 08/20] ifconfig(8): show ax.25 addresses
 
 ---
  sbin/ifconfig/ifconfig.c | 5 +++++

@@ -1,0 +1,24 @@
+From 10f06fe9fa10f5c83aa8374d2829d7b40b9d984b Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Tue, 7 Jan 2020 19:21:21 +0000
+Subject: [PATCH 20/20] ax25(4) sync sets
+
+---
+ distrib/sets/lists/comp/mi | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/distrib/sets/lists/comp/mi b/distrib/sets/lists/comp/mi
+index 3f22bebd311..89d067f5e13 100644
+--- a/distrib/sets/lists/comp/mi
++++ b/distrib/sets/lists/comp/mi
+@@ -2178,6 +2178,7 @@
+ ./usr/share/man/man3/auth_subr.3
+ ./usr/share/man/man3/authenticate.3
+ ./usr/share/man/man3/authnone_create.3
++./usr/share/man/man3/ax25_aton.3
+ ./usr/share/man/man3/basename.3
+ ./usr/share/man/man3/bcmp.3
+ ./usr/share/man/man3/bcopy.3
+-- 
+2.24.1
+

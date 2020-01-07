@@ -1,0 +1,189 @@
+From 2f8d770a1c6f66d370baac6858292cb4e8574177 Mon Sep 17 00:00:00 2001
+From: "Iain R. Learmonth" <irl@fsfe.org>
+Date: Tue, 7 Jan 2020 19:04:47 +0000
+Subject: [PATCH 16/20] ax25(4) SIOCSIFLLADDR
+
+---
+ lib/libc/net/Makefile.inc |  2 +-
+ lib/libc/net/ax25.c       |  1 -
+ lib/libc/net/ax25_aton.3  | 65 +++++++++++++++++++++++++++++++++++++++
+ sys/net/if.c              | 31 ++++++++++++++++---
+ sys/netax25/if_ax25subr.c |  2 +-
+ 5 files changed, 93 insertions(+), 8 deletions(-)
+ create mode 100644 lib/libc/net/ax25_aton.3
+
+diff --git a/lib/libc/net/Makefile.inc b/lib/libc/net/Makefile.inc
+index 452b8b874e6..d18b7444b03 100644
+--- a/lib/libc/net/Makefile.inc
++++ b/lib/libc/net/Makefile.inc
+@@ -28,7 +28,7 @@ SRCS+=	ip6opt.c rthdr.c vars6.c
+ 
+ .include "${LIBCSRCDIR}/arch/${MACHINE_CPU}/net/Makefile.inc"
+ 
+-MAN+=	htobe64.3 ether_aton.3 gai_strerror.3 getaddrinfo.3 gethostbyname.3 \
++MAN+=	ax25_aton.3 htobe64.3 ether_aton.3 gai_strerror.3 getaddrinfo.3 gethostbyname.3 \
+ 	getifaddrs.3 getnameinfo.3 getnetent.3 getpeereid.3 getprotoent.3 \
+ 	getrrsetbyname.3 getservent.3 htonl.3 if_indextoname.3 \
+ 	inet_addr.3 inet_lnaof.3 inet_net_ntop.3 inet_ntop.3 \
+diff --git a/lib/libc/net/ax25.c b/lib/libc/net/ax25.c
+index fb2c1ad98cf..a0f6f79fb99 100644
+--- a/lib/libc/net/ax25.c
++++ b/lib/libc/net/ax25.c
+@@ -68,7 +68,6 @@ ax25_aton(const char *s)
+ 		}
+ 		ax.ax25_addr_octet[i] = toupper(s[i]) << 1;
+ 	}
+-	ax.ax25_addr_octet[6] |= AX25_RESERVED_MASK;
+ 	return &ax;
+ }
+ 
+diff --git a/lib/libc/net/ax25_aton.3 b/lib/libc/net/ax25_aton.3
+new file mode 100644
+index 00000000000..84f80803089
+--- /dev/null
++++ b/lib/libc/net/ax25_aton.3
+@@ -0,0 +1,65 @@
++.\"	$OpenBSD: ether_aton.3,v 1.1 2019/08/30 18:33:17 deraadt Exp $
++.\"
++.\" Written by roland@frob.com.  Public domain.
++.\"
++.Dd $Mdocdate: December 29 2019 $
++.Dt AX25_ATON 3
++.Os
++.Sh NAME
++.Nm ax25_aton ,
++.Nm ax25_ntoa
++.Nd convert AX.25 address representation
++.Sh SYNOPSIS
++.In sys/types.h
++.In netax25/if_ax25.h
++.Ft char *
++.Fn ax25_ntoa "struct ax25_addr *a"
++.Ft struct ax25_addr *
++.Fn ax25_aton "const char *s"
++.Sh DESCRIPTION
++AX.25 addresses are represented by the
++following structure:
++.Bd -literal -offset indent
++struct ax25_addr {
++        u_int8_t  ax25_addr_octet[AX25_ADDR_LEN];
++};
++.Ed
++.Pp
++The
++.Fn ax25_ntoa
++function converts this structure into an
++.Xr ascii 7
++string of the form
++.Dq XXXXXX Ns Op -nn ,
++consisting of at most 6 uppercase letters or digits numbers separated
++by colons, followed by an optional dash and two digits for the SSID.
++It returns a pointer to a static buffer that is reused for each call.
++The string may be shorter if the callsign portion of the address is less
++than 6 characters.
++SSIDs are not zero-padded and a zero SSID will simply be omitted.
++The
++.Fn ax25_aton
++converts an
++.Xr ascii 7
++string of the same form and to a structure
++containing the 7 octets of the address.
++It returns a pointer to a static structure that is reused for each call.
++.Fn ax25_aton
++will return NULL if the string does not represent a valid address.
++.Sh HISTORY
++A
++.Fn convert_call
++function appeared in the early Linux AX.25 support to convert an ASCII string
++to the network representation.
++.Pp
++.Fn ax25_ntoa
++and
++.Fn ax25_aton
++functions appeared in the libax25-0.0.2 release for Linux although using
++sockaddr data structures including digipeater path information, not restricted
++to a single address.
++.Sh BUGS
++The data space used by these functions is static; if future use
++requires the data, it should be copied before any subsequent calls to
++these functions overwrite it.
++As such, these functions are not thread-safe.
+diff --git a/sys/net/if.c b/sys/net/if.c
+index b531d66a374..9557bb563c4 100644
+--- a/sys/net/if.c
++++ b/sys/net/if.c
+@@ -130,6 +130,8 @@
+ #include <net/pfvar.h>
+ #endif
+ 
++#include <netax25/if_ax25.h>
++
+ #include <sys/device.h>
+ 
+ void	if_attachsetup(struct ifnet *);
+@@ -1813,8 +1815,10 @@ if_setlladdr(struct ifnet *ifp, const uint8_t *lladdr)
+ 	if (ifp->if_sadl == NULL)
+ 		return (EINVAL);
+ 
+-	memcpy(((struct arpcom *)ifp)->ac_enaddr, lladdr, ETHER_ADDR_LEN);
+-	memcpy(LLADDR(ifp->if_sadl), lladdr, ETHER_ADDR_LEN);
++	if (ifp->if_sadl->sdl_alen == ETHER_ADDR_LEN)
++		memcpy(((struct arpcom *)ifp)->ac_enaddr, lladdr, ETHER_ADDR_LEN);
++
++	memcpy(LLADDR(ifp->if_sadl), lladdr, ifp->if_sadl->sdl_alen);
+ 
+ 	return (0);
+ }
+@@ -2178,9 +2182,7 @@ ifioctl(struct socket *so, u_long cmd, caddr_t data, struct proc *p)
+ 	case SIOCSIFLLADDR:
+ 		if ((error = suser(p)))
+ 			break;
+-		if ((ifp->if_sadl == NULL) ||
+-		    (ifr->ifr_addr.sa_len != ETHER_ADDR_LEN) ||
+-		    (ETHER_IS_MULTICAST(ifr->ifr_addr.sa_data))) {
++		if (ifp->if_sadl == NULL) {
+ 			error = EINVAL;
+ 			break;
+ 		}
+@@ -2190,6 +2192,25 @@ ifioctl(struct socket *so, u_long cmd, caddr_t data, struct proc *p)
+ 		case IFT_CARP:
+ 		case IFT_XETHER:
+ 		case IFT_ISO88025:
++			if ((ifr->ifr_addr.sa_len != ETHER_ADDR_LEN) ||
++			    (ETHER_IS_MULTICAST(ifr->ifr_addr.sa_data))) {
++				error = EINVAL;
++				break;
++			}
++			error = (*ifp->if_ioctl)(ifp, cmd, data);
++			if (error == ENOTTY)
++				error = 0;
++			if (error == 0)
++				error = if_setlladdr(ifp,
++				    ifr->ifr_addr.sa_data);
++			break;
++		case IFT_AX25:
++			if ((ifr->ifr_addr.sa_len != AX25_ADDR_LEN) ||
++			    ((ifr->ifr_addr.sa_data[6] & ~AX25_SSID_MASK) != 0)) {
++				error = EINVAL;
++				break;
++			}
++			/* TODO: check that the characters are all uppercase letters and digits */
+ 			error = (*ifp->if_ioctl)(ifp, cmd, data);
+ 			if (error == ENOTTY)
+ 				error = 0;
+diff --git a/sys/netax25/if_ax25subr.c b/sys/netax25/if_ax25subr.c
+index 5f30ac68dbc..269da227ef1 100644
+--- a/sys/netax25/if_ax25subr.c
++++ b/sys/netax25/if_ax25subr.c
+@@ -168,7 +168,7 @@ char *
+ ax25_sprintf(u_char *ap)
+ {
+ 	int i, ssid;
+-	static char ax25buf[AX25_ADDR_LEN + 3];
++	static char ax25buf[AX25_ADDR_LEN + 4];
+ 	char *cp = ax25buf;
+ 	for (i = 0; i < AX25_ADDR_LEN - 1; i++) {
+ 		*cp++ = *ap++ >> 1;
+-- 
+2.24.1
+

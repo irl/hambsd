@@ -1,7 +1,7 @@
 From 76eb78290cb2a78200df717359fc91dc66ff855a Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:08 +0000
-Subject: [PATCH 05/14] kiss(4): kiss tnc support
+Subject: [PATCH 05/20] kiss(4): kiss tnc support
 
 ---
  distrib/sets/lists/comp/mi |   1 +

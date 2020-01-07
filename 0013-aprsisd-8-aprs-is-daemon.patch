@@ -1,7 +1,7 @@
 From bed7a65a1b2a5efd7d80d9716ef7316a9f293b96 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:08:26 +0000
-Subject: [PATCH 13/14] aprsisd(8): aprs-is daemon
+Subject: [PATCH 13/20] aprsisd(8): aprs-is daemon
 
 ---
  distrib/sets/lists/base/mi |   1 +

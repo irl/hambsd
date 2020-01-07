@@ -1,7 +1,7 @@
 From 18f5b30e7727a4591584502f3373060ca9239df5 Mon Sep 17 00:00:00 2001
 From: "Iain R. Learmonth" <irl@fsfe.org>
 Date: Tue, 17 Dec 2019 21:07:54 +0000
-Subject: [PATCH 01/14] pstat(8): display text for msts/endrun line discs
+Subject: [PATCH 01/20] pstat(8): display text for msts/endrun line discs
 
 ---
  usr.sbin/pstat/pstat.8 | 12 +++++++++---
